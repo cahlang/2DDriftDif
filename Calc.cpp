@@ -18,7 +18,7 @@ namespace calc{
 	}
 	
 	MeasuredCurrent outer_circuit_current(Morphology &device_parameters, const PositionDependentParameter &electron_current, const PositionDependentParameter &hole_current, 
-		const PositionDependentParameter &net_rate){
+		const PositionDependentParameter &displacement_current, const PositionDependentParameter &net_rate){
 
 		MeasuredCurrent current;
 		std::vector<double> row_current (net_rate.points_x, 0.0);
@@ -37,7 +37,7 @@ namespace calc{
 					break;
 				}
 
-				row_current[i] += electron_current.data[site] + hole_current.data[site];
+				row_current[i] += electron_current.data[site] + hole_current.data[site] + displacement_current.data[site];
 				if (net_rate.data[site] != 0.0 && net_rate.data[site_x_plus] != 0.0){
 					row_current[i] += (net_rate.data[site_x_plus] - net_rate.data[site]) * net_rate.spacing_x * 0.5;
 				}

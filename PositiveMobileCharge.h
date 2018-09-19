@@ -22,10 +22,6 @@ class PositiveMobileCharge{
 
 public:
 
-	// If a time-dependent experiment is simulated this flag should be set to "True", otherwise "False".
-	// The time-dependence has not yet been implemented.
-	bool flag_time_dependent; 
-
 	// Stores the concentration of the negative mobile charge (Typically holes).
 	PositionDependentParameter concentration;
 	// Stores the current density in the x- and y-direction, respectively.
@@ -54,10 +50,12 @@ public:
 
 	// Calculates the concentrations of this type of charge for the given potential and current data in rate and rate_coef.
 	void solve(Morphology &material, const Potential &potential);
+	void solve_one_d(Morphology &material, const Potential &potential);
 	void solve(Morphology &material, const Potential &potential, const PositionDependentParameter &previous_time_concentraiton, double time_step);
+	void solve_one_d(Morphology &material, const Potential &potential, const PositionDependentParameter &previous_time_concentration, double time_step);
 	// Substeps of solve.
 	void calculate_concentration(int i, int j, Morphology &material, const Potential &potential);
-	void calculate_concentration(int i, int j, Morphology &material, const Potential &potential, const PositionDependentParameter &previous_time_concentraiton, double time_step);
+	void calculate_concentration(int i, int j, Morphology &material, const Potential &potential, const double previous_time_concentraiton, double time_step);
 	void calculate_current(Morphology &material, const Potential potential);
 
 	void ion_solve(Morphology &material, const Potential &potential);

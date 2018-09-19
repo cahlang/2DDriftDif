@@ -21,7 +21,7 @@ namespace control{
 	// Calculates the electron and hole concentrations, population of CT states and the electrical potential for the next iterative step.
 	bool solver(Morphology &material, Potential &potential, NegativeMobileCharge &electron, PositiveMobileCharge &hole, NegativeMobileCharge &negative_ion, PositiveMobileCharge &positive_ion, MeasuredCurrent &outer_circuit_current, PositionDependentParameter &net_rate);
 	bool solver(Morphology &material, Potential &potential, NegativeMobileCharge &electron, PositiveMobileCharge &hole, NegativeMobileCharge &negative_ion, PositiveMobileCharge &positive_ion, MeasuredCurrent &outer_circuit_current, PositionDependentParameter &net_rate,
-		PositionDependentParameter &previous_potential, PositionDependentParameter &previous_holecon, PositionDependentParameter &previous_electroncon, PositionDependentParameter &previous_neg_ion_con, PositionDependentParameter &previous_pos_ion_con);
+		 PositionDependentParameter &previous_holecon, PositionDependentParameter &previous_electroncon, PositionDependentParameter &previous_neg_ion_con, PositionDependentParameter &previous_pos_ion_con, PositionDependentParameter &previous_potential, double time_step);
 
 	// Set boundary conditions and initial guess.
 	void initiate_calculation(Morphology &material, Potential &potential, NegativeMobileCharge &electron, PositiveMobileCharge &hole, NegativeMobileCharge &negative_ion, PositiveMobileCharge &positive_ion, MeasuredCurrent &outer_circuit_current, PositionDependentParameter &net_rate, Experiment &measurement);
@@ -31,5 +31,6 @@ namespace control{
 
 	// Simulates the selected measurement. Currently only IV-curves are implemented, but it is quite simple to build more complex ones once the time dependence is implemented.
 	void run_measurement(Morphology &morphology, Potential &potential, NegativeMobileCharge &electron, PositiveMobileCharge &hole, NegativeMobileCharge &negative_ion, PositiveMobileCharge &positive_ion, Experiment &measurement);
+
 
 }

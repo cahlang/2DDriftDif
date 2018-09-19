@@ -56,16 +56,24 @@ struct Material{
 	double generation_rate;
 	double mobility_electron;
 	double mobility_hole; 
-	double HOMO_level;
-	double LUMO_level;
+	double hole_trans_energy;
+	double electron_trans_energy;
 	double relative_permittivity;
 	double DOS;
+	double electron_trans_DOS, hole_trans_DOS;
 
 	double MG_state_DOS;
 	double MG_plus_level;
 	double MG_minus_level;
 
+	double electron_trap_energy, electron_trap_DOS;
+	double hole_trap_energy, hole_trap_DOS;
+
+	double bulk_electron_trap_capture_coef_electron, bulk_electron_trap_capture_coef_hole;
+	double bulk_hole_trap_capture_coef_electron, bulk_hole_trap_capture_coef_hole;
+
 	double bulk_reduced_recombination_coef;
+	double bulk_bimolecular_recombination_coef;
 	double bulk_hole_capture_coef;
 	double bulk_electron_capture_coef;
 
@@ -77,6 +85,13 @@ struct Material{
 
 	double negative_ion_eq_conc;
 	double positive_ion_eq_conc;
+
+	double max_ion_concentration;
+
+	double generation_rate_initial;
+	double mobility_electron_initial;
+	double mobility_hole_initial;
+
 
 };
 
@@ -96,6 +111,8 @@ struct MaterialInterface : Material {
 	double interface_trap_hole_capture_coef;
 	double interface_trap_electron_capture_coef;
 
+	double interface_bimolecular_recombination_coef_1, interface_bimolecular_recombination_coef_2;
+
 };
 
 // Stores some electrode parameters
@@ -104,9 +121,6 @@ struct Electrode{
 	int lattice_number;
 
 	double work_function;
-
-	double surface_recombination_rate_hole;
-	double surface_recombination_rate_electron;
 
 	double potential;	// This is the applied potential in the current step of the selected measurement.
 
@@ -137,6 +151,9 @@ struct ElectrodeMaterialInterface : MaterialInterface {
 
 	int boundary_condition;
 
+	bool surface_recombination = false;
+	double surface_recombination_velocity_electron, surface_recombination_velocity_hole;
+
 	// Currently not in use.
 	double eq_hole_concentration;
 	double eq_electron_concentration;
@@ -150,12 +167,14 @@ struct ElectrodeMaterialInterface : MaterialInterface {
 // Stores parameters related to the selected measurement.
 struct Experiment{
 
-	bool experiment_iv;
+	bool experiment_iv, electrostatics, experiment_CELIV, experiment_transient_photocurrent;
 	bool output_time, output_potential, output_current;
+
 	int data_points;
 	int current_data_point = 0;
 
 	double potential_step;
+	std::vector<double> electrode_potentials;
 	std::vector<double> anode_potential;
 	std::vector<double> cathode_potential;
 	double time_step;
@@ -170,6 +189,10 @@ struct Experiment{
 	void set_current_data_point(int number);
 	int get_current_data_point();
 	void next_data_point();
+
+	double voltage_rise_speed, voltage_offset, pulse_length;
+
+	bool output_full_data;
 
 };
 

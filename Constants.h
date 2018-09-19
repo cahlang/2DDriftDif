@@ -6,7 +6,7 @@ namespace constant{
 
 	extern int max_iteration_step;
 	extern double temperature;
-	extern double lenght_norm;
+	extern double length_norm;
 	extern double mobility_norm;
 	const double boltzmann = 1.3806503E-23; // 
 	const double permittivity = 8.8541878176E-12; //	F/m

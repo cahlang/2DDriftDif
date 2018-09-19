@@ -13,11 +13,15 @@ namespace pt = boost::property_tree;
 void Potential::initialize(pt::ptree &settings){
 
 	double norm_potential = constant::boltzmann * constant::temperature / constant::elementary_charge;
+	double norm_concentration = constant::permittivity * norm_potential / (constant::elementary_charge * pow(constant::length_norm, 2.0));
+	double norm_current = constant::mobility_norm * constant::boltzmann * constant::temperature * norm_concentration / constant::length_norm;
 
 	chemical.initialize(norm_potential);
 	electrical.initialize(norm_potential);
 	electrochemical_electron.initialize(norm_potential);
 	electrochemical_hole.initialize(norm_potential);
+
+	displacement_current.initialize(norm_current);
 
 	c_convergence = misc::to_array(settings.get<std::string>("numerics.potential_convergence_criteria"));
 	c_relaxation = misc::to_array(settings.get<std::string>("numerics.potential_relaxation_coefficient"));
@@ -65,6 +69,88 @@ void Potential::solve(Morphology &material, const PositionDependentParameter &el
 		}
 	}
 
+
+	return;
+
+}
+
+void Potential::solve_one_d(Morphology &material, const PositionDependentParameter &electron_concentration, const PositionDependentParameter &hole_concentration, const PositionDependentParameter &negative_ion_concentration, const PositionDependentParameter &positive_ion_concentration){
+
+	PositionDependentParameter previous_solution = electrical;
+
+	flag_has_converged = true;
+
+	std::vector<double> a(electrical.points_x - 2, 0.0), b(electrical.points_x - 2, 0.0), c(electrical.points_x - 2, 0.0), d(electrical.points_x - 2, 0.0);
+
+	for (int i = 0; i < b.size(); i++){
+
+		int site = i + 1;
+		int site_x_minus = i;
+		int site_x_plus = i + 2;
+
+		if (i != 0)
+		a[i] = material.get_relative_permittivity(site, site_x_minus) / pow(electrical.spacing_x, 2.0);
+
+		b[i] = -(material.get_relative_permittivity(site, site_x_minus) + material.get_relative_permittivity(site, site_x_plus)) / pow(electrical.spacing_x, 2.0) - (electron_concentration.data[site] + hole_concentration.data[site]);
+		if (i != b.size()-1)
+		c[i] = material.get_relative_permittivity(site, site_x_plus) / pow(electrical.spacing_x, 2.0);
+
+		d[i] = electron_concentration.data[site] - hole_concentration.data[site] - material.dopants.data[site] + material.MG_electron_concentration.data[site]
+			- material.MG_hole_concentration.data[site] - (electron_concentration.data[site] + hole_concentration.data[site])*previous_solution.data[site];
+	}
+
+
+	std::vector<double> c_prime(electrical.points_x - 2, 0.0), d_prime(electrical.points_x - 2, 0.0);
+
+	int lower_bound = 0;
+	int upper_bound = b.size() - 1;
+
+	if (electrical.calculate_this[1] == true)
+		d[0] -= electrical.data[0] * material.get_relative_permittivity(1, 0) / pow(electrical.spacing_x, 2.0);
+	else{
+		d[1] -= electrical.data[1] * material.get_relative_permittivity(2, 1) / pow(electrical.spacing_x, 2.0);
+		lower_bound = 1;
+	}
+
+	if (electrical.calculate_this[electrical.points_x-2])
+		d[d.size() - 1] -= electrical.data[d.size() + 1] * material.get_relative_permittivity(d.size(), d.size() + 1) / pow(electrical.spacing_x, 2.0);
+	else{
+		d[d.size() - 2] -= electrical.data[d.size()] * material.get_relative_permittivity(d.size() - 1, d.size()) / pow(electrical.spacing_x, 2.0);
+		upper_bound = b.size() - 2;
+	}
+
+	for (int n = lower_bound; n <= upper_bound; n++){
+		if (n == lower_bound)
+			c_prime[n] = c[n] / b[n];
+		else if (n < upper_bound)
+			c_prime[n] = c[n] / (b[n] - a[n] * c_prime[n - 1]);
+
+		if (n == lower_bound)
+			d_prime[n] = d[n] / b[n];
+		else
+			d_prime[n] = (d[n] - a[n] * d_prime[n - 1]) / (b[n] - a[n] * c_prime[n - 1]);
+	}
+
+	for (int n = upper_bound; n >= lower_bound; n--){
+		int i = n + 1;
+		if (n == upper_bound)
+			electrical.data[i] = d_prime[n];
+		else
+			electrical.data[i] = d_prime[n] - c_prime[n] * electrical.data[i + 1];
+	}
+
+	for (int i = electrical.points_x - 1; i >= 0; i--){
+		for (int j = electrical.points_y - 1; j >= 0; j--){
+
+			int site = i*electrical.points_y + j;
+
+			if (fabs(electrical.data[site] - previous_solution.data[site]) >= c_convergence[iteration_stage] * fabs(electrical.data[site]) + 1E-15){
+				flag_has_converged = false;
+			}
+
+		}
+	}
+
 	return;
 
 }
@@ -81,29 +167,29 @@ void Potential::calculate_electrical_potential(int i, int j, Morphology &materia
 
 	double previous = electrical.data[site];
 
-	a[0] = -2.0 / pow(electrical.spacing_x, 2.0); // The Gummel scheme can be added for increased stability (2.0 -> 2.0 + electron con + hole con).
+	a[0] = -(material.get_relative_permittivity(site, site_x_minus) + material.get_relative_permittivity(site, site_x_plus)) / pow(electrical.spacing_x, 2.0) - (electron_concentration.data[site] + hole_concentration.data[site]); // The Gummel scheme can be added for increased stability (2.0 -> 2.0 + electron con + hole con).
 
-	a[1] = electrical.data[site_x_minus] / pow(electrical.spacing_x, 2.0);
+	a[1] = material.get_relative_permittivity(site, site_x_minus) * electrical.data[site_x_minus] / pow(electrical.spacing_x, 2.0);
 
-	a[2] = electrical.data[site_x_plus] / pow(electrical.spacing_x, 2.0);
+	a[2] = material.get_relative_permittivity(site, site_x_plus) * electrical.data[site_x_plus] / pow(electrical.spacing_x, 2.0);
 
-	b = 1.0 / material.get_relative_permittivity(site) * (electron_concentration.data[site] - hole_concentration.data[site] - material.dopants.data[site]
-			+ material.MG_electron_concentration.data[site] - material.MG_hole_concentration.data[site]);
+	b = electron_concentration.data[site] - hole_concentration.data[site] - material.dopants.data[site] + material.MG_electron_concentration.data[site]
+		- material.MG_hole_concentration.data[site] - (electron_concentration.data[site] + hole_concentration.data[site])*electrical.data[site];
 
 	if (material.negative_ion_transport(site)){
-		b += 1.0 / material.get_relative_permittivity(site) * negative_ion_concentration.data[site];
+		b += negative_ion_concentration.data[site];
 	}
 	if (material.positive_ion_transport(site)){
-		b -= 1.0 / material.get_relative_permittivity(site) * positive_ion_concentration.data[site];
+		b -= positive_ion_concentration.data[site];
 	}
 
 	if (i == 0){
 		a[1] = 0.0;
-		b += -material.get_electrode_potential(0) / pow(electrical.spacing_x, 2.0);
+		b += -material.get_relative_permittivity(site, site_x_minus) * material.get_electrode_potential(0) / pow(electrical.spacing_x, 2.0);
 	}
 	if (i == electrical.points_x - 1){
 		a[2] = 0.0;
-		b += -material.get_electrode_potential(1) / pow(electrical.spacing_x, 2.0);
+		b += -material.get_relative_permittivity(site, site_x_plus) * material.get_electrode_potential(1) / pow(electrical.spacing_x, 2.0);
 	}
 
 	// If the number of points in the x-direction is larger than 1, the 2D case is assumed. Then the following terms needs to be added:
@@ -118,9 +204,9 @@ void Potential::calculate_electrical_potential(int i, int j, Morphology &materia
 		else
 			site_y_plus = site + 1 - electrical.points_y;
 
-		a[0] += -2.0 / pow(electrical.spacing_y, 2.0);
-		a[3] = electrical.data[site_y_minus] / pow(electrical.spacing_y, 2.0);
-		a[4] = electrical.data[site_y_plus] / pow(electrical.spacing_y, 2.0);
+		a[0] += -(material.get_relative_permittivity(site, site_y_minus) + material.get_relative_permittivity(site, site_y_plus)) / pow(electrical.spacing_y, 2.0);
+		a[3] = material.get_relative_permittivity(site, site_y_minus) * electrical.data[site_y_minus] / pow(electrical.spacing_y, 2.0);
+		a[4] = material.get_relative_permittivity(site, site_y_plus) * electrical.data[site_y_plus] / pow(electrical.spacing_y, 2.0);
 
 	}
 
@@ -139,11 +225,31 @@ void Potential::calculate_electrochemical_potential(Morphology material, Positio
 	for (int site = 0; site < electrochemical_electron.points_x*electrochemical_electron.points_y; site++){
 		
 		if (electrical.calculate_this[site]){
-			electrochemical_electron.data[site] = -(material.get_LUMO(site) + electrical.data[site] - log(electron_concentration.data[site] / material.get_DOS(site)));
-			electrochemical_hole.data[site] = -(material.get_HOMO(site) + electrical.data[site] + log(hole_concentration.data[site] / material.get_DOS(site)));
+			electrochemical_electron.data[site] = -(material.get_electron_trans_energy(site) + electrical.data[site] - log(electron_concentration.data[site] / material.get_electron_trans_DOS(site)));
+			electrochemical_hole.data[site] = -(material.get_hole_trans_energy(site) + electrical.data[site] + log(hole_concentration.data[site] / material.get_hole_trans_DOS(site)));
 		}
 	}
 
+}
+
+void Potential::calculate_displacement_current(Morphology &material, const PositionDependentParameter previous_potential, const double time_step){
+
+	int site, site_x_plus;
+
+	for (int i = 0; i < electrical.points_x; i++){
+		for (int j = 0; j < electrical.points_y; j++){
+
+			site = i*electrical.points_y + j;
+			site_x_plus = site + electrical.points_y;
+
+			if (i < electrical.points_x - 1 && !material.is_electrode(site) && !material.is_electrode(site_x_plus)){
+
+				displacement_current.data[site] = -material.get_relative_permittivity(site, site_x_plus) * ((electrical.data[site_x_plus] - electrical.data[site]) / electrical.spacing_x - (previous_potential.data[site_x_plus] - previous_potential.data[site]) / electrical.spacing_x) / time_step;
+			}
+		}
+	}
+
+	return;
 }
 
 void Potential::set_boundary_conditions(Morphology device_properties){
@@ -212,7 +318,7 @@ void Potential::set_initial_guess(Morphology device_properties, std::string file
 			for (int j = 0; j < electrical.points_y; j++){
 				int site = i*electrical.points_y + j;
 				if (electrical.calculate_this[site] == true){
-					electrical.data[site] = electrical.spacing_x * ((double)electrical.points_x - (double)i) / device_properties.get_active_layer_lenght_x() * (device_properties.get_electrode_potential(0) - device_properties.get_electrode_potential(1));
+					electrical.data[site] = electrical.spacing_x * ((double)electrical.points_x - (double)i) / device_properties.get_active_layer_length_x() * (device_properties.get_electrode_potential(0) - device_properties.get_electrode_potential(1));
 				}
 			}
 		}

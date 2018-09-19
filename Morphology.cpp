@@ -1,6 +1,8 @@
 #define BULK_RECOMBINATION 0
 #define INTERFACE_RECOMBINATION 1
 #define TRAP_ASSISTED_RECOMBINATION_MG 2
+#define BULK_TRAP_ASSISTED_RECOMBINATION 3
+#define INTERFACE_TRAP_ASSISTED_RECOMBINATION 4
 
 #define BULK_GENERATION 0
 #define INTERFACE_GENERATION 1
@@ -15,7 +17,6 @@
 #include "Constants.h"
 #include "Misc.h"
 
-#include <ctime> // Gets a seed for the pseudorandom number generator
 #include <cstdlib>
 #include <vector>
 #include <boost/property_tree/ptree.hpp>
@@ -32,25 +33,29 @@ void Morphology::initialize(pt::ptree &settings){
 
 	points_x = settings.get<int>("general.points_x");
 	points_y = settings.get<int>("general.points_y", 1);
-	active_layer_lenght_x = settings.get<double>("general.lenght_x") / constant::lenght_norm;
-	active_layer_lenght_y = settings.get<double>("general.lenght_y") / constant::lenght_norm;
-	spacing_x = active_layer_lenght_x / ((double)points_x - 1.0);
-	spacing_y = active_layer_lenght_y / ((double)points_y - 1.0);
+	active_layer_length_x = settings.get<double>("general.length_x") / constant::length_norm;
+	active_layer_length_y = settings.get<double>("general.length_y", active_layer_length_x*constant::length_norm) / constant::length_norm;
+	spacing_x = active_layer_length_x / ((double)points_x - 1.0);
+	spacing_y = active_layer_length_y / ((double)points_y - 1.0);
 	morphology_file = settings.get<std::string>("general.morphology_file");
-	dopants_file = settings.get<std::string>("general.dopants_file");
+
+
+	effective_temperature_activated = settings.get<bool>("general.effective_temperature",false);
 
 	lattice.resize(points_x*points_y, 0);
 	interfaces.resize(points_x*points_y, std::vector<int>(4, NOT_ALREADY_INTERFACE));
 
 	read_morphology();
 
-	double norm_potential, norm_concentration, norm_current, norm_rate;
 	norm_potential = constant::boltzmann * constant::temperature / constant::elementary_charge;
-	norm_concentration = constant::permittivity * norm_potential / (constant::elementary_charge * pow(constant::lenght_norm, 2.0));
-	norm_current = constant::mobility_norm * constant::boltzmann * constant::temperature * norm_concentration / constant::lenght_norm;
-	norm_rate = norm_current / (constant::elementary_charge * constant::lenght_norm);
+	norm_concentration = constant::permittivity * norm_potential / (constant::elementary_charge * pow(constant::length_norm, 2.0));
+	norm_current = constant::mobility_norm * constant::boltzmann * constant::temperature * norm_concentration / constant::length_norm;
+	norm_rate = norm_current / (constant::elementary_charge * constant::length_norm);
 
 	dopants.initialize(norm_concentration);
+	std::string no_dopants = "ignore";
+	dopants_file = settings.get<std::string>("general.dopants_file", no_dopants);
+	if (!(dopants_file == no_dopants))
 	read_dopants();
 
 	convergence_boundary_condition = settings.get<bool>("general.convergence_boundary_condition", false);
@@ -90,9 +95,9 @@ void Morphology::read_material_data(pt::ptree & settings){
 
 	double norm_potential, norm_concentration, norm_current, norm_rate;
 	norm_potential = constant::boltzmann * constant::temperature / constant::elementary_charge;
-	norm_concentration = constant::permittivity * norm_potential / (constant::elementary_charge * pow(constant::lenght_norm, 2.0));
-	norm_current = constant::mobility_norm * constant::boltzmann * constant::temperature * norm_concentration / constant::lenght_norm;
-	norm_rate = norm_current / (constant::elementary_charge * constant::lenght_norm);
+	norm_concentration = constant::permittivity * norm_potential / (constant::elementary_charge * pow(constant::length_norm, 2.0));
+	norm_current = constant::mobility_norm * constant::boltzmann * constant::temperature * norm_concentration / constant::length_norm;
+	norm_rate = norm_current / (constant::elementary_charge * constant::length_norm);
 
 	for (int a = 0; a < MAX_NUMBER_MATERIALS; a++){	// Material parameters are stored in the "material" vector. 
 
@@ -110,18 +115,28 @@ void Morphology::read_material_data(pt::ptree & settings){
 			mat.mobility_hole = input_material.get().get<double>("mobility_hole") / constant::mobility_norm;
 			mat.mobility_electron = input_material.get().get<double>("mobility_electron") / constant::mobility_norm;
 			mat.generation_rate = input_material.get().get<double>("generation_rate") / norm_rate;
-			mat.HOMO_level = input_material.get().get<double>("HOMO_level") / norm_potential;
-			mat.LUMO_level = input_material.get().get<double>("LUMO_level") / norm_potential;
+			mat.hole_trans_energy = input_material.get().get<double>("hole_transport_energy") / norm_potential;
+			mat.hole_trans_DOS = input_material.get().get<double>("hole_transport_DOS") / norm_concentration;
+			mat.electron_trans_energy = input_material.get().get<double>("electron_transport_energy") / norm_potential;
+			mat.electron_trans_DOS = input_material.get().get<double>("electron_transport_DOS") / norm_concentration;
 			mat.relative_permittivity = input_material.get().get<double>("relative_permittivity");
-			mat.DOS = input_material.get().get<double>("DOS") / norm_concentration;
 
 			mat.MG_minus_level = input_material.get().get<double>("MG_minus_level", 0.0)/norm_potential;
 			mat.MG_plus_level = input_material.get().get<double>("MG_plus_level", 0.0) / norm_potential;
 			mat.MG_state_DOS = input_material.get().get<double>("MG_state_DOS", 0.0) / norm_concentration;
 
 			mat.bulk_reduced_recombination_coef = input_material.get().get<double>("bulk_reduced_recombination_coef", 1.0);
-			mat.bulk_hole_capture_coef = input_material.get().get<double>("bulk_hole_capture_coef", mat.mobility_hole/mat.relative_permittivity);
-			mat.bulk_electron_capture_coef = input_material.get().get<double>("bulk_electron_capture_coef", mat.mobility_electron / mat.relative_permittivity);
+			mat.bulk_hole_trap_capture_coef_hole = input_material.get().get<double>("bulk_hole_trap_capture_coef_hole", constant::elementary_charge * mat.mobility_hole * constant::mobility_norm / (mat.relative_permittivity * constant::permittivity)) / (constant::elementary_charge * constant::mobility_norm / constant::permittivity);
+			mat.bulk_hole_trap_capture_coef_electron = input_material.get().get<double>("bulk_hole_trap_capture_coef_electron", constant::elementary_charge * mat.mobility_electron * constant::mobility_norm / (mat.relative_permittivity * constant::permittivity)) / (constant::elementary_charge * constant::mobility_norm / constant::permittivity);
+			mat.bulk_electron_trap_capture_coef_hole = input_material.get().get<double>("bulk_electron_trap_capture_coef_hole", constant::elementary_charge * mat.mobility_hole * constant::mobility_norm / (mat.relative_permittivity * constant::permittivity)) / (constant::elementary_charge * constant::mobility_norm / constant::permittivity);
+			mat.bulk_electron_trap_capture_coef_electron = input_material.get().get<double>("bulk_electron_trap_capture_coef_electron", constant::elementary_charge * mat.mobility_electron * constant::mobility_norm / (mat.relative_permittivity * constant::permittivity)) / (constant::elementary_charge * constant::mobility_norm / constant::permittivity);
+
+			//mat.hole_trap_energy = input_material.get().get<double>("hole_trap_energy") / norm_potential;
+			//mat.hole_trap_DOS = input_material.get().get<double>("hole_trap_DOS") / norm_concentration;
+			//mat.electron_trap_energy = input_material.get().get<double>("electron_trap_energy") / norm_potential;
+			//mat.electron_trap_DOS = input_material.get().get<double>("electron_trap_DOS") / norm_concentration;
+
+			mat.bulk_bimolecular_recombination_coef = input_material.get().get<double>("bulk_bimolecular_recombination_coef", constant::elementary_charge * (mat.mobility_hole + mat.mobility_electron) * constant::mobility_norm / (mat.relative_permittivity * constant::permittivity)) / (constant::elementary_charge * constant::mobility_norm / constant::permittivity);
 
 			mat.negative_ion_transport = input_material.get().get<bool>("negative_ion_transport", false);
 			if (mat.negative_ion_transport){
@@ -135,6 +150,9 @@ void Morphology::read_material_data(pt::ptree & settings){
 				ion_transport = true;
 				mat.positive_ion_eq_conc = input_material.get().get<double>("positive_ion_eq_conc") / norm_concentration;
 			}
+
+			if (mat.negative_ion_transport || mat.positive_ion_transport)
+				mat.max_ion_concentration = input_material.get().get<double>("max_ion_concentration") / norm_concentration;
 
 			material.push_back(mat);
 
@@ -156,8 +174,6 @@ void Morphology::read_material_data(pt::ptree & settings){
 			mat.lattice_number = input_material.get().get<int>("lattice_number");
 
 			mat.work_function = input_material.get().get<double>("work_function") / norm_potential;
-			// mat.surface_recombination_rate_electron = input_material.get().get<double>("surface_recombination_rate_electron");
-			// mat.surface_recombination_rate_hole = input_material.get().get<double>("surface_recombination_rate_hole");
 			electrode.push_back(mat);
 		
 		}
@@ -173,9 +189,9 @@ void Morphology::read_material_interface_data(pt::ptree &settings){
 
 	double norm_potential, norm_concentration, norm_current, norm_rate;
 	norm_potential = constant::boltzmann * constant::temperature / constant::elementary_charge;
-	norm_concentration = constant::permittivity * norm_potential / (constant::elementary_charge * pow(constant::lenght_norm, 2.0));
-	norm_current = constant::mobility_norm * constant::boltzmann * constant::temperature * norm_concentration / constant::lenght_norm;
-	norm_rate = norm_current / (constant::elementary_charge * constant::lenght_norm);
+	norm_concentration = constant::permittivity * norm_potential / (constant::elementary_charge * pow(constant::length_norm, 2.0));
+	norm_current = constant::mobility_norm * constant::boltzmann * constant::temperature * norm_concentration / constant::length_norm;
+	norm_rate = norm_current / (constant::elementary_charge * constant::length_norm);
 
 	for (int a = 0; a < MAX_NUMBER_MATERIAL_INTERFACES; a++){	// Material parameters are stored in the "material" vector. 
 
@@ -191,21 +207,28 @@ void Morphology::read_material_interface_data(pt::ptree &settings){
 			mat.mobility_hole = input_material.get().get<double>("mobility_hole") / constant::mobility_norm;
 			mat.mobility_electron = input_material.get().get<double>("mobility_electron") / constant::mobility_norm;
 			mat.generation_rate = input_material.get().get<double>("generation_rate") / norm_rate;
-			mat.HOMO_level = input_material.get().get<double>("HOMO_level") / norm_potential;
-			mat.LUMO_level = input_material.get().get<double>("LUMO_level") / norm_potential;
+			mat.hole_trans_energy = input_material.get().get<double>("hole_transport_energy") / norm_potential;
+			mat.hole_trans_DOS = input_material.get().get<double>("hole_transport_DOS") / norm_concentration;
+			mat.electron_trans_energy = input_material.get().get<double>("electron_transport_energy") / norm_potential;
+			mat.electron_trans_DOS = input_material.get().get<double>("electron_transport_DOS") / norm_concentration;
 			mat.relative_permittivity = input_material.get().get<double>("relative_permittivity");
-			mat.DOS = input_material.get().get<double>("DOS") / norm_concentration;
+
 
 			mat.material_numbers[0] = input_material.get().get<int>("material_1");
 			mat.material_numbers[1] = input_material.get().get<int>("material_2");
 
 			mat.interface_reduced_recombination_coef = input_material.get().get<double>("interface_reduced_recombination_coef", 1.0);
-			mat.interface_hole_capture_coef = input_material.get().get<double>("interface_hole_capture_coef", mat.mobility_hole / mat.relative_permittivity);
-			mat.interface_electron_capture_coef = input_material.get().get<double>("interface_electron_capture_coef", mat.mobility_electron / mat.relative_permittivity);
+			mat.interface_hole_capture_coef = input_material.get().get<double>("interface_hole_capture_coef", constant::elementary_charge * mat.mobility_hole * constant::mobility_norm / (mat.relative_permittivity * constant::permittivity)) / (constant::elementary_charge * constant::mobility_norm / constant::permittivity);
+			mat.interface_electron_capture_coef = input_material.get().get<double>("interface_electron_capture_coef", constant::elementary_charge *  mat.mobility_electron  * constant::mobility_norm / (mat.relative_permittivity * constant::permittivity)) / (constant::elementary_charge * constant::mobility_norm / constant::permittivity);
+
+			mat.interface_bimolecular_recombination_coef_1 = input_material.get().get<double>("interface_bimolecular_recombination_coef_1", 
+				constant::elementary_charge * (material[mat.material_numbers[0]].mobility_hole + material[mat.material_numbers[1]].mobility_electron) * constant::mobility_norm / (mat.relative_permittivity * constant::permittivity)) / (constant::elementary_charge * constant::mobility_norm / constant::permittivity);
+			mat.interface_bimolecular_recombination_coef_2 = input_material.get().get<double>("interface_bimolecular_recombination_coef_2",
+				constant::elementary_charge * (material[mat.material_numbers[1]].mobility_hole + material[mat.material_numbers[0]].mobility_electron) * constant::mobility_norm / (mat.relative_permittivity * constant::permittivity)) / (constant::elementary_charge * constant::mobility_norm / constant::permittivity);
 
 			mat.interface_trap_reduced_recombination_coef = input_material.get().get<double>("interface_trap_reduced_recombination_coef", 1.0);
-			mat.interface_trap_hole_capture_coef = input_material.get().get<double>("interface_trap_hole_capture_coef", mat.mobility_hole / mat.relative_permittivity);
-			mat.interface_trap_electron_capture_coef = input_material.get().get<double>("interface_trap_electron_capture_coef", mat.mobility_electron / mat.relative_permittivity);
+			mat.interface_trap_hole_capture_coef = input_material.get().get<double>("interface_trap_hole_capture_coef", constant::elementary_charge *  mat.mobility_hole  * constant::mobility_norm / (mat.relative_permittivity * constant::permittivity)) / (constant::elementary_charge * constant::mobility_norm / constant::permittivity);
+			mat.interface_trap_electron_capture_coef = input_material.get().get<double>("interface_trap_electron_capture_coef", constant::elementary_charge *  mat.mobility_electron * constant::mobility_norm / (mat.relative_permittivity * constant::permittivity)) / (constant::elementary_charge * constant::mobility_norm / constant::permittivity);
 
 			material_interface.push_back(mat);
 
@@ -232,19 +255,25 @@ void Morphology::read_material_interface_data(pt::ptree &settings){
 			mat.mobility_hole = input_material.get().get<double>("mobility_hole", material[mat.material_number].mobility_hole * constant::mobility_norm) / constant::mobility_norm;
 			mat.mobility_electron = input_material.get().get<double>("mobility_electron", material[mat.material_number].mobility_electron * constant::mobility_norm) / constant::mobility_norm;
 			mat.generation_rate = input_material.get().get<double>("generation_rate", material[mat.material_number].generation_rate * norm_rate) / norm_rate;
-			mat.HOMO_level = input_material.get().get<double>("HOMO_level", material[mat.material_number].HOMO_level * norm_potential) / norm_potential;
-			mat.LUMO_level = input_material.get().get<double>("LUMO_level", material[mat.material_number].LUMO_level * norm_potential) / norm_potential;
+			mat.hole_trans_energy = input_material.get().get<double>("hole_transport_energy", material[mat.material_number].hole_trans_energy * norm_potential) / norm_potential;
+			mat.electron_trans_energy = input_material.get().get<double>("electron_transport_energy", material[mat.material_number].electron_trans_energy * norm_potential) / norm_potential;
 			mat.relative_permittivity = input_material.get().get<double>("relative_permittivity", material[mat.material_number].relative_permittivity);
-			mat.DOS = input_material.get().get<double>("DOS", material[mat.material_number].DOS * norm_concentration) / norm_concentration;
+			mat.electron_trans_DOS = input_material.get().get<double>("electron_transport_DOS", material[mat.material_number].electron_trans_DOS * norm_concentration) / norm_concentration;
+			mat.hole_trans_DOS = input_material.get().get<double>("electron_transport_DOS", material[mat.material_number].hole_trans_DOS * norm_concentration) / norm_concentration;
 
 			mat.interface_reduced_recombination_coef = input_material.get().get<double>("interface_reduced_recombination_coef", 1.0);
-			mat.interface_hole_capture_coef = input_material.get().get<double>("interface_hole_capture_coef", mat.mobility_hole / mat.relative_permittivity);
-			mat.interface_electron_capture_coef = input_material.get().get<double>("interface_electron_capture_coef", mat.mobility_electron / mat.relative_permittivity);
+			mat.interface_hole_capture_coef = input_material.get().get<double>("interface_hole_capture_coef", constant::elementary_charge * mat.mobility_hole * constant::mobility_norm / (mat.relative_permittivity * constant::permittivity)) / (constant::elementary_charge * constant::mobility_norm / constant::permittivity);
+			mat.interface_electron_capture_coef = input_material.get().get<double>("interface_electron_capture_coef", constant::elementary_charge * mat.mobility_electron * constant::mobility_norm / (mat.relative_permittivity * constant::permittivity)) / (constant::elementary_charge * constant::mobility_norm / constant::permittivity);
 
 			mat.interface_trap_reduced_recombination_coef = input_material.get().get<double>("interface_trap_reduced_recombination_coef", 1.0);
-			mat.interface_trap_hole_capture_coef = input_material.get().get<double>("interface_trap_hole_capture_coef", mat.mobility_hole / mat.relative_permittivity);
-			mat.interface_trap_electron_capture_coef = input_material.get().get<double>("interface_trap_electron_capture_coef", mat.mobility_electron / mat.relative_permittivity);
+			mat.interface_trap_hole_capture_coef = input_material.get().get<double>("interface_trap_hole_capture_coef", constant::elementary_charge * mat.mobility_hole * constant::mobility_norm / (mat.relative_permittivity * constant::permittivity)) / (constant::elementary_charge * constant::mobility_norm / constant::permittivity);
+			mat.interface_trap_electron_capture_coef = input_material.get().get<double>("interface_trap_electron_capture_coef", constant::elementary_charge * mat.mobility_electron * constant::mobility_norm / (mat.relative_permittivity * constant::permittivity)) / (constant::elementary_charge * constant::mobility_norm / constant::permittivity);
 
+			mat.surface_recombination = input_material.get().get<bool>("surface_recombination", false);
+			if (mat.surface_recombination){
+				mat.surface_recombination_velocity_electron = input_material.get().get<double>("surface_recombination_velocity_electron");
+				mat.surface_recombination_velocity_hole = input_material.get().get<double>("surface_recombination_velocity_hole");
+			}
 			mat.boundary_condition = input_material.get().get<int>("boundary_condition");
 
 			electrode_material_interface.push_back(mat);
@@ -308,7 +337,7 @@ void Morphology::calculate_recombination_rates(const PositionDependentParameter 
 
 				int site = j + i * points_y;
 				if (!is_electrode(site) && !is_cbc(site)){
-					double R = -get_bulk_reduced_recombination_coef(site) * (get_bulk_hole_capture_coef(site) + get_bulk_electron_capture_coef(site));
+					double R = -get_bulk_reduced_recombination_coef(site) * (get_bulk_bimolecular_recombination_coef(site));
 					electron_rate_coef.data[site] += R * hole_concentration.data[site];
 					hole_rate_coef.data[site] += R * electron_concentration.data[site];
 				}
@@ -319,19 +348,81 @@ void Morphology::calculate_recombination_rates(const PositionDependentParameter 
 	if (recombination_mode[INTERFACE_RECOMBINATION]){
 		for (int pair_number = 0; pair_number < interface_pair_data.size(); pair_number++){
 			std::array<int, 2> site = interface_pair_data[pair_number].get_pair_sites();
+			double R;
+//			double R = -get_interface_reduced_recombination_coef(pair_number) * (get_interface_hole_capture_coef(pair_number) + get_interface_electron_capture_coef(pair_number));
 
-			double R = -get_interface_reduced_recombination_coef(pair_number) * (get_interface_hole_capture_coef(pair_number) + get_interface_electron_capture_coef(pair_number));
+//					electron_rate_coef.data[site[0]] += R * hole_concentration.data[site[1]];
+//					hole_rate_coef.data[site[1]] += R * electron_concentration.data[site[0]];
 
-					electron_rate_coef.data[site[0]] += R * hole_concentration.data[site[1]];
-					hole_rate_coef.data[site[1]] += R * electron_concentration.data[site[0]];
-
-					electron_rate_coef.data[site[1]] += R * hole_concentration.data[site[0]];
-					hole_rate_coef.data[site[0]] += R * electron_concentration.data[site[1]];
+	//				electron_rate_coef.data[site[1]] += R * hole_concentration.data[site[0]];
+	//				hole_rate_coef.data[site[0]] += R * electron_concentration.data[site[1]];
 			
+					if (get_material_number(lattice[site[0]]) == material_interface[interface_pair_data[pair_number].interface_material].material_numbers[0]){
+						R = -get_interface_reduced_recombination_coef(pair_number) * get_interface_bimolecular_recombination_coef_1(pair_number);
+						hole_rate_coef.data[site[0]] += R * electron_concentration.data[site[1]];
+						electron_rate_coef.data[site[1]] += R * hole_concentration.data[site[0]];
+						R = -get_interface_reduced_recombination_coef(pair_number) * get_interface_bimolecular_recombination_coef_2(pair_number);
+						electron_rate_coef.data[site[0]] += R * hole_concentration.data[site[1]];
+						hole_rate_coef.data[site[1]] += R * electron_concentration.data[site[0]];
+					}
+					else{
+						R = -get_interface_reduced_recombination_coef(pair_number) * get_interface_bimolecular_recombination_coef_2(pair_number);
+						hole_rate_coef.data[site[0]] += R * electron_concentration.data[site[1]];
+						electron_rate_coef.data[site[1]] += R * hole_concentration.data[site[0]];
+						R = -get_interface_reduced_recombination_coef(pair_number) * get_interface_bimolecular_recombination_coef_1(pair_number);
+						electron_rate_coef.data[site[0]] += R * hole_concentration.data[site[1]];
+						hole_rate_coef.data[site[1]] += R * electron_concentration.data[site[0]];
+					}
+
 		}
 	}
+	/*if (recombination_mode[BULK_TRAP_ASSISTED_RECOMBINATION]){
+		for (int i = 0; i < points_x; i++){
+			for (int j = 0; j < points_y; j++){
 
-	if (recombination_mode[TRAP_ASSISTED_RECOMBINATION_MG]){
+				int site = j + i * points_y;
+				if (!is_electrode(site) && !is_cbc(site)){
+
+					double p_1 = get_electron_trans_DOS(site)*std::min(exp(get_electron_trans_energy(site) - get_electron_trap_energy(site)),1.0);
+					double n_1 = get_hole_trans_DOS(site)*std::min(exp(get_electron_trap_energy(site) - get_hole_trans_energy(site)),1.0);
+
+					double R = -get_bulk_electron_trap_capture_coef_electron(site) * get_bulk_electron_trap_capture_coef_hole(site)
+						 / (get_bulk_electron_trap_capture_coef_electron(site) * (electron_concentration.data[site] + n_1) + get_bulk_electron_trap_capture_coef_hole(site) * (hole_concentration.data[site] + p_1));
+
+					electron_rate_coef.data[site] += R * hole_concentration.data[site];
+					hole_rate_coef.data[site] += R * electron_concentration.data[site];
+
+					p_1 = get_electron_trans_DOS(site)*std::min(exp(get_electron_trans_energy(site) - get_hole_trap_energy(site)), 1.0);
+					n_1 = get_hole_trans_DOS(site)*std::min(exp(get_hole_trap_energy(site) - get_hole_trans_energy(site)), 1.0);
+
+					R = -get_bulk_hole_trap_capture_coef_electron(site) * get_bulk_hole_trap_capture_coef_hole(site)
+						/ (get_bulk_hole_trap_capture_coef_electron(site) * (electron_concentration.data[site] + n_1) + get_bulk_hole_trap_capture_coef_hole(site) * (hole_concentration.data[site] + p_1));
+
+					electron_rate_coef.data[site] += R * hole_concentration.data[site];
+					hole_rate_coef.data[site] += R * electron_concentration.data[site];
+
+				}
+
+			}
+		}
+
+	}
+	if (recombination_mode[INTERFACE_TRAP_ASSISTED_RECOMBINATION]){
+
+		for (int n = 0; n < electrode_material_interface.size(); n++){
+			for (int m = 0; m < electrode_material_interface[n].sites.size(); m++){
+				int site = electrode_material_interface[n].sites[m];
+				int electrode_number = electrode_material_interface[n].get_electrode_number();
+
+				double p_1 = get_DOS(site)*(std::min(exp(get_electron_trans_energy(site) - get_interface_hole_trap_energy(n)), 1.0)
+					+ std::min(1.0 / (exp(get_work_function(electrode_number) - get_interface_hole_trap_energy(n)
+					- (electric_potential.data[site] - get_electrode_potential(electrode_number))) + 1.0), 1.0));
+				double n_1 = 
+			}
+		}
+
+	}*/
+	/*if (recombination_mode[TRAP_ASSISTED_RECOMBINATION_MG]){
 
 		for (int n = 0; n < electrode_material_interface.size(); n++){
 			for (int m = 0; m < electrode_material_interface[n].sites.size(); m++){
@@ -340,9 +431,9 @@ void Morphology::calculate_recombination_rates(const PositionDependentParameter 
 
 				if (electrode_number == 0 && get_MG_plus(site) != 0.0){
 
-					double electron_con_zero = get_hole_mobility(site) / get_relative_permittivity(site) * get_DOS(site) * std::min(1.0 / (exp(get_MG_plus(site) - get_work_function(electrode_number)
+					double electron_con_zero = get_hole_mobility(site) / get_relative_permittivity(site) * get_hole_trans_DOS(site) * std::min(1.0 / (exp(get_MG_plus(site) - get_work_function(electrode_number)
 						+ (electric_potential.data[site] - get_electrode_potential(electrode_number))) + 1.0), 1.0);
-					double hole_con_zero = get_electron_mobility(site) / get_relative_permittivity(site) * get_DOS(site) * std::min(1.0 / (exp(get_work_function(electrode_number) - get_MG_plus(site)
+					double hole_con_zero = get_electron_mobility(site) / get_relative_permittivity(site) * get_electron_trans_DOS(site) * std::min(1.0 / (exp(get_work_function(electrode_number) - get_MG_plus(site)
 						- (electric_potential.data[site] - get_electrode_potential(electrode_number))) + 1.0), 1.0);
 					double electron_con = get_electron_mobility(site) / get_relative_permittivity(site) * electron_concentration.data[site];
 					double hole_con = get_hole_mobility(site) / get_relative_permittivity(site) * hole_concentration.data[site];
@@ -352,9 +443,9 @@ void Morphology::calculate_recombination_rates(const PositionDependentParameter 
 
 				}
 				else if (electrode_number == 1 && get_MG_minus(site) != 0.0){
-					double electron_con_zero = get_hole_mobility(site) / get_relative_permittivity(site) * get_DOS(site) * std::min(1.0 / (exp(get_MG_minus(site) - get_work_function(electrode_number)
+					double electron_con_zero = get_hole_mobility(site) / get_relative_permittivity(site) * get_hole_trans_DOS(site) * std::min(1.0 / (exp(get_MG_minus(site) - get_work_function(electrode_number)
 						+ (electric_potential.data[site] - get_electrode_potential(electrode_number))) + 1.0), 1.0);
-					double hole_con_zero = get_electron_mobility(site) / get_relative_permittivity(site) * get_DOS(site) * std::min(1.0 / (exp(get_work_function(electrode_number) - get_MG_minus(site)
+					double hole_con_zero = get_electron_mobility(site) / get_relative_permittivity(site) * get_electron_trans_DOS(site) * std::min(1.0 / (exp(get_work_function(electrode_number) - get_MG_minus(site)
 						- (electric_potential.data[site] - get_electrode_potential(electrode_number))) + 1.0), 1.0);
 					double electron_con = get_electron_mobility(site) / get_relative_permittivity(site) * electron_concentration.data[site];
 					double hole_con = get_hole_mobility(site) / get_relative_permittivity(site) * hole_concentration.data[site];
@@ -373,7 +464,7 @@ void Morphology::calculate_recombination_rates(const PositionDependentParameter 
 			if (site[0] < points_y*(points_x - 2) && site[0] >= points_y * 2 && site[1] < points_y*(points_x - 2) && site[1] >= points_y * 2){
 
 				// Calculate the fermi level at before contact, we only consider CT- states below this and CT+ above this.
-				double fermi_level = (std::min(get_HOMO(site[0]), get_HOMO(site[1])) + std::max(get_LUMO(site[0]), get_LUMO(site[1]))) / 2;
+				double fermi_level = (std::min(get_hole_trans_energy(site[0]), get_hole_trans_energy(site[1])) + std::max(get_electron_trans_energy(site[0]), get_electron_trans_energy(site[1]))) / 2;
 
 
 				// We assume that the CT+ state is at site 0 and CT- at site 1, if they happen to be the other way around, we swap site 0 and site 1.
@@ -384,10 +475,10 @@ void Morphology::calculate_recombination_rates(const PositionDependentParameter 
 				if (get_MG_plus(site[0]) != 0.0 && get_MG_minus(site[1]) != 0.0){
 
 					double electron_con = electron_concentration.data[site[1]];
-					double electron_con_zero = get_DOS(site[1]) * std::min(1.0 / (exp(get_MG_plus(site[0]) - get_LUMO(site[1]) + (electric_potential.data[site[0]] - electric_potential.data[site[1]])) + 1.0), 1.0);
+					double electron_con_zero = get_DOS(site[1]) * std::min(1.0 / (exp(get_MG_plus(site[0]) - get_electron_trans_energy(site[1]) + (electric_potential.data[site[0]] - electric_potential.data[site[1]])) + 1.0), 1.0);
 
 					double hole_con = hole_concentration.data[site[0]];
-					double hole_con_zero = get_DOS(site[0]) * std::min(1.0 / (exp(get_HOMO(site[0]) - get_MG_plus(site[0])) + 1.0), 1.0);
+					double hole_con_zero = get_DOS(site[0]) * std::min(1.0 / (exp(get_hole_trans_energy(site[0]) - get_MG_plus(site[0])) + 1.0), 1.0);
 
 					double C_n = get_interface_trap_electron_capture_coef(pair_number);
 					double C_p = get_interface_trap_hole_capture_coef(pair_number);
@@ -395,9 +486,9 @@ void Morphology::calculate_recombination_rates(const PositionDependentParameter 
 					electron_rate_coef.data[site[1]] += - get_interface_trap_reduced_recombination_coef(pair_number) * get_MG_DOS(site[1]) * C_n * C_p * hole_con / (C_n * (electron_con + electron_con_zero) + C_p * (hole_con + hole_con_zero));
 					hole_rate_coef.data[site[0]] += - get_interface_trap_reduced_recombination_coef(pair_number) * get_MG_DOS(site[1]) * C_n * C_p * electron_con / (C_n * (electron_con + electron_con_zero) + C_p * (hole_con + hole_con_zero));
 
-					electron_con_zero = get_DOS(site[1]) * std::min(1.0 / (exp(get_MG_minus(site[1]) - get_LUMO(site[1])) + 1.0), 1.0);
+					electron_con_zero = get_DOS(site[1]) * std::min(1.0 / (exp(get_MG_minus(site[1]) - get_electron_trans_energy(site[1])) + 1.0), 1.0);
 
-					hole_con_zero = get_DOS(site[0]) * std::min(1.0 / (exp(get_HOMO(site[0]) - get_MG_minus(site[1]) - (electric_potential.data[site[1]] - electric_potential.data[site[0]])) + 1.0), 1.0);
+					hole_con_zero = get_DOS(site[0]) * std::min(1.0 / (exp(get_hole_trans_energy(site[0]) - get_MG_minus(site[1]) - (electric_potential.data[site[1]] - electric_potential.data[site[0]])) + 1.0), 1.0);
 
 					electron_rate_coef.data[site[1]] += - get_interface_trap_reduced_recombination_coef(pair_number) * get_MG_DOS(site[1]) * C_n * C_p * hole_con / (C_n * (electron_con + electron_con_zero) + C_p * (hole_con + hole_con_zero));
 					hole_rate_coef.data[site[0]] += - get_interface_trap_reduced_recombination_coef(pair_number) * get_MG_DOS(site[0]) * C_n * C_p * electron_con / (C_n * (electron_con + electron_con_zero) + C_p * (hole_con + hole_con_zero));
@@ -412,7 +503,7 @@ void Morphology::calculate_recombination_rates(const PositionDependentParameter 
 			}
 
 		}
-	}
+	}*/
 
 	for (int site = 0; site<points_x*points_y; site++){
 
@@ -431,7 +522,7 @@ void Morphology::calculate_generation_rate(const PositionDependentParameter &ele
 			for (int j = 0; j < points_y; j++){
 				int site = j + i * points_y;
 				if (!is_electrode(site) && !is_cbc(site)){
-					double intrinsic_rate = get_bulk_reduced_recombination_coef(site) * (get_bulk_hole_capture_coef(site) + get_bulk_electron_capture_coef(site)) * pow(get_DOS(site), 2.0) * exp(get_LUMO(site) - get_HOMO(site));
+					double intrinsic_rate = get_bulk_reduced_recombination_coef(site) * (get_bulk_bimolecular_recombination_coef(site)) * get_electron_trans_DOS(site) * get_hole_trans_DOS(site) * exp(get_electron_trans_energy(site) - get_hole_trans_energy(site));
 					electron_rate.data[site] += intrinsic_rate;
 					hole_rate.data[site] += intrinsic_rate;
 				}
@@ -443,25 +534,61 @@ void Morphology::calculate_generation_rate(const PositionDependentParameter &ele
 		for (int pair_number = 0; pair_number < interface_pair_data.size(); pair_number++){
 			std::array<int, 2> site = interface_pair_data[pair_number].get_pair_sites();
 
-			if (get_LUMO(site[0]) < get_LUMO(site[1]) || get_HOMO(site[0]) < get_HOMO(site[1])){
-
-				double intrinsic_rate = get_interface_reduced_recombination_coef(pair_number) * (get_interface_hole_capture_coef(pair_number) + get_interface_electron_capture_coef(pair_number)) *
-					pow(get_interface_DOS(pair_number), 2.0) * exp(get_LUMO(site[1]) - get_HOMO(site[0]) - (electric_potential.data[site[0]] - electric_potential.data[site[1]]));
-
-				hole_rate.data[site[0]] += intrinsic_rate;
-				electron_rate.data[site[1]] += intrinsic_rate;
+			if (get_material_number(lattice[site[0]]) == material_interface[interface_pair_data[pair_number].interface_material].material_numbers[0]){
+				double R = get_interface_reduced_recombination_coef(pair_number) * get_interface_bimolecular_recombination_coef_1(pair_number);
+				double intrinsic_concentration = get_electron_trans_DOS(site[1]) * get_hole_trans_DOS(site[0]) * exp(get_electron_trans_energy(site[1]) - get_hole_trans_energy(site[0]));
+				hole_rate.data[site[0]] += R * intrinsic_concentration;
+				electron_rate.data[site[1]] += R * intrinsic_concentration;
+				R = get_interface_reduced_recombination_coef(pair_number) * get_interface_bimolecular_recombination_coef_2(pair_number);
+				intrinsic_concentration = get_electron_trans_DOS(site[0]) * get_hole_trans_DOS(site[1]) * exp(get_electron_trans_energy(site[0]) - get_hole_trans_energy(site[1]));
+				electron_rate.data[site[0]] += R * intrinsic_concentration;
+				hole_rate.data[site[1]] += R * intrinsic_concentration;
 			}
-			else if (get_LUMO(site[0]) > get_LUMO(site[1]) || get_HOMO(site[0]) > get_HOMO(site[1])){
-
-				double intrinsic_rate = get_interface_reduced_recombination_coef(pair_number) * (get_interface_hole_capture_coef(pair_number) + get_interface_electron_capture_coef(pair_number)) *
-					pow(get_interface_DOS(pair_number), 2.0) * exp(get_LUMO(site[0]) - get_HOMO(site[1]) - (electric_potential.data[site[1]] - electric_potential.data[site[0]]));
-
-				hole_rate.data[site[1]] += intrinsic_rate;
-				electron_rate.data[site[0]] += intrinsic_rate;
+			else{
+				double R = get_interface_reduced_recombination_coef(pair_number) * get_interface_bimolecular_recombination_coef_2(pair_number);
+				double intrinsic_concentration = get_electron_trans_DOS(site[1]) * get_hole_trans_DOS(site[0]) * exp(get_electron_trans_energy(site[1]) - get_hole_trans_energy(site[0]));
+				hole_rate.data[site[0]] += R * intrinsic_concentration;
+				electron_rate.data[site[1]] += R * intrinsic_concentration;
+				R = get_interface_reduced_recombination_coef(pair_number) * get_interface_bimolecular_recombination_coef_1(pair_number);
+				intrinsic_concentration = get_electron_trans_DOS(site[0]) * get_hole_trans_DOS(site[1]) * exp(get_electron_trans_energy(site[0]) - get_hole_trans_energy(site[1]));
+				electron_rate.data[site[0]] += R * intrinsic_concentration;
+				hole_rate.data[site[1]] += R * intrinsic_concentration;
 			}
 		}
 	}
+	/*if (recombination_mode[BULK_TRAP_ASSISTED_RECOMBINATION]){
 
+		for (int i = 0; i < points_x; i++){
+			for (int j = 0; j < points_y; j++){
+
+				int site = j + i * points_y;
+				if (!is_electrode(site) && !is_cbc(site)){
+
+					double intrinsic_concentration = get_hole_trans_DOS(site) * get_electron_trans_DOS(site) * exp(get_electron_trans_energy(site) - get_hole_trans_energy(site));
+
+					double p_1 = get_electron_trans_DOS(site)*std::min(exp(get_electron_trans_energy(site) - get_electron_trap_energy(site)), 1.0);
+					double n_1 = get_hole_trans_DOS(site)*std::min(exp(get_electron_trap_energy(site) - get_hole_trans_energy(site)), 1.0);
+
+					double R = get_bulk_electron_trap_capture_coef_electron(site) * get_bulk_electron_trap_capture_coef_hole(site)
+						/ (get_bulk_electron_trap_capture_coef_electron(site) * (electron_concentration.data[site] + n_1) + get_bulk_electron_trap_capture_coef_hole(site) * (hole_concentration.data[site] + p_1));
+
+					electron_rate.data[site] += R * intrinsic_concentration;
+					hole_rate.data[site] += R * intrinsic_concentration;
+
+					p_1 = get_electron_trans_DOS(site)*std::min(exp(get_electron_trans_energy(site) - get_hole_trap_energy(site)), 1.0);
+					n_1 = get_hole_trans_DOS(site)*std::min(exp(get_hole_trap_energy(site) - get_hole_trans_energy(site)), 1.0);
+
+					R = get_bulk_hole_trap_capture_coef_electron(site) * get_bulk_hole_trap_capture_coef_hole(site)
+						/ (get_bulk_hole_trap_capture_coef_electron(site) * (electron_concentration.data[site] + n_1) + get_bulk_hole_trap_capture_coef_hole(site) * (hole_concentration.data[site] + p_1));
+
+					electron_rate.data[site] += R * intrinsic_concentration;
+					hole_rate.data[site] += R * intrinsic_concentration;
+
+				}
+
+			}
+		}
+	}
 	if (recombination_mode[TRAP_ASSISTED_RECOMBINATION_MG]){
 
 		for (int n = 0; n < electrode_material_interface.size(); n++){
@@ -469,7 +596,7 @@ void Morphology::calculate_generation_rate(const PositionDependentParameter &ele
 				int site = electrode_material_interface[n].sites[m];
 				int electrode_number = electrode_material_interface[n].get_electrode_number();
 
-				double intrinsic_concentration_squared = pow(get_DOS(site), 2.0) * exp(get_LUMO(site) - get_HOMO(site));
+				double intrinsic_concentration_squared = get_electron_trans_DOS(site) * get_hole_trans_DOS(site) * exp(get_electron_trans_energy(site) - get_hole_trans_energy(site));
 
 
 				if (electrode_number == 0 && get_MG_plus(site) != 0.0){
@@ -508,7 +635,7 @@ void Morphology::calculate_generation_rate(const PositionDependentParameter &ele
 			if (site[0] < points_y*(points_x - 2) && site[0] >= points_y * 2 && site[1] < points_y*(points_x - 2) && site[1] >= points_y * 2){
 
 				// Calculate the fermi level at before contact, we only consider CT- states below this and CT+ above this.
-				double fermi_level = (std::min(get_HOMO(site[0]), get_HOMO(site[1])) + std::max(get_LUMO(site[0]), get_LUMO(site[1]))) / 2;
+				double fermi_level = (std::min(get_hole_trans_energy(site[0]), get_hole_trans_energy(site[1])) + std::max(get_electron_trans_energy(site[0]), get_electron_trans_energy(site[1]))) / 2;
 
 
 				// We assume that the CT+ state is at site 0 and CT- at site 1, if they happen to be the other way around, we swap site 0 and site 1.
@@ -519,12 +646,12 @@ void Morphology::calculate_generation_rate(const PositionDependentParameter &ele
 				if (get_MG_plus(site[0]) != 0.0 && get_MG_minus(site[1]) != 0.0){
 
 					double electron_con = electron_concentration.data[site[1]];
-					double electron_con_zero = get_DOS(site[1]) * std::min(1.0 / (exp(get_MG_plus(site[0]) - get_LUMO(site[1]) + (electric_potential.data[site[0]] - electric_potential.data[site[1]])) + 1.0), 1.0);
+					double electron_con_zero = get_DOS(site[1]) * std::min(1.0 / (exp(get_MG_plus(site[0]) - get_electron_trans_energy(site[1]) + (electric_potential.data[site[0]] - electric_potential.data[site[1]])) + 1.0), 1.0);
 
 					double hole_con = hole_concentration.data[site[0]];
-					double hole_con_zero = get_DOS(site[0]) * std::min(1.0 / (exp(get_HOMO(site[0]) - get_MG_plus(site[0])) + 1.0), 1.0);
+					double hole_con_zero = get_DOS(site[0]) * std::min(1.0 / (exp(get_hole_trans_energy(site[0]) - get_MG_plus(site[0])) + 1.0), 1.0);
 
-					double intrinsic_concentration_squared = pow(get_interface_DOS(pair_number), 2.0) * exp(get_LUMO(site[1]) - get_HOMO(site[0]) - (electric_potential.data[site[0]] - electric_potential.data[site[1]]));
+					double intrinsic_concentration_squared = pow(get_interface_DOS(pair_number), 2.0) * exp(get_electron_trans_energy(site[1]) - get_hole_trans_energy(site[0]) - (electric_potential.data[site[0]] - electric_potential.data[site[1]]));
 
 					double C_n = get_interface_trap_electron_capture_coef(pair_number);
 					double C_p = get_interface_trap_hole_capture_coef(pair_number);
@@ -532,9 +659,9 @@ void Morphology::calculate_generation_rate(const PositionDependentParameter &ele
 					electron_rate.data[site[1]] += get_interface_trap_reduced_recombination_coef(pair_number) * get_MG_DOS(site[1]) * C_n * C_p * intrinsic_concentration_squared / (C_n * (electron_con + electron_con_zero) + C_p * (hole_con + hole_con_zero));
 					hole_rate.data[site[0]] += get_interface_trap_reduced_recombination_coef(pair_number) * get_MG_DOS(site[0]) * C_n * C_p * intrinsic_concentration_squared / (C_n * (electron_con + electron_con_zero) + C_p * (hole_con + hole_con_zero));
 
-					electron_con_zero = get_DOS(site[1]) * std::min(1.0 / (exp(get_MG_minus(site[1]) - get_LUMO(site[1])) + 1.0), 1.0);
+					electron_con_zero = get_DOS(site[1]) * std::min(1.0 / (exp(get_MG_minus(site[1]) - get_electron_trans_energy(site[1])) + 1.0), 1.0);
 
-					hole_con_zero = get_DOS(site[0]) * std::min(1.0 / (exp(get_HOMO(site[0]) - get_MG_minus(site[1]) - (electric_potential.data[site[1]] - electric_potential.data[site[0]])) + 1.0), 1.0);
+					hole_con_zero = get_DOS(site[0]) * std::min(1.0 / (exp(get_hole_trans_energy(site[0]) - get_MG_minus(site[1]) - (electric_potential.data[site[1]] - electric_potential.data[site[0]])) + 1.0), 1.0);
 
 					electron_rate.data[site[1]] += get_interface_trap_reduced_recombination_coef(pair_number) * get_MG_DOS(site[1]) * C_n * C_p * intrinsic_concentration_squared / (C_n * (electron_con + electron_con_zero) + C_p * (hole_con + hole_con_zero));
 					hole_rate.data[site[0]] += get_interface_trap_reduced_recombination_coef(pair_number) * get_MG_DOS(site[0]) * C_n * C_p * intrinsic_concentration_squared / (C_n * (electron_con + electron_con_zero) + C_p * (hole_con + hole_con_zero));
@@ -548,9 +675,9 @@ void Morphology::calculate_generation_rate(const PositionDependentParameter &ele
 			}
 
 		}
-	}
+	}*/
 
-	if (generation_mode[BULK_GENERATION]){
+	if (generation_mode[BULK_GENERATION] && is_light_on()){
 		for (int i = 0; i < points_x; i++){
 			for (int j = 0; j < points_y; j++){
 				int site = j + i * points_y;
@@ -563,14 +690,14 @@ void Morphology::calculate_generation_rate(const PositionDependentParameter &ele
 		}
 	}
 
-	if (generation_mode[INTERFACE_GENERATION]){
+	if (generation_mode[INTERFACE_GENERATION] && is_light_on()){
 		for (int pair_number = 0; pair_number < interface_pair_data.size(); pair_number++){
 			std::array<int, 2> site = interface_pair_data[pair_number].get_pair_sites();
-			if (get_LUMO(site[0]) < get_LUMO(site[1]) || get_HOMO(site[0]) < get_HOMO(site[1])){
+			if (get_electron_trans_energy(site[0]) < get_electron_trans_energy(site[1]) || get_hole_trans_energy(site[0]) < get_hole_trans_energy(site[1])){
 				hole_rate.data[site[0]] += get_interface_generation_rate(pair_number);
 				electron_rate.data[site[1]] += get_interface_generation_rate(pair_number);
 			}
-			else if (get_LUMO(site[0]) > get_LUMO(site[1]) || get_HOMO(site[0]) > get_HOMO(site[1])){
+			else if (get_electron_trans_energy(site[0]) > get_electron_trans_energy(site[1]) || get_hole_trans_energy(site[0]) > get_hole_trans_energy(site[1])){
 				hole_rate.data[site[1]] += get_interface_generation_rate(pair_number);
 				electron_rate.data[site[0]] += get_interface_generation_rate(pair_number);
 			}
@@ -647,8 +774,8 @@ void Morphology::calculate_MG_state_population(const PositionDependentParameter 
 				double fermi_level = get_work_function(electrode_number) + get_electrode_potential(electrode_number);
 				double energy_MG_plus = get_MG_plus(site) + electric_potential.data[site];
 
-				double electron_con_zero = get_hole_mobility(site) / get_relative_permittivity(site) * get_DOS(site) * (1.0-misc::single_level_fermi_dist(fermi_level, energy_MG_plus));
-				double hole_con_zero = get_electron_mobility(site) / get_relative_permittivity(site) * get_DOS(site) * misc::single_level_fermi_dist(fermi_level, energy_MG_plus);
+				double electron_con_zero = get_hole_mobility(site) / get_relative_permittivity(site) * get_electron_trans_DOS(site) * (1.0-misc::single_level_fermi_dist(fermi_level, energy_MG_plus));
+				double hole_con_zero = get_electron_mobility(site) / get_relative_permittivity(site) * get_hole_trans_DOS(site) * misc::single_level_fermi_dist(fermi_level, energy_MG_plus);
 				double electron_con = get_electron_mobility(site) / get_relative_permittivity(site) * electron_concentration.data[site];
 				double hole_con = get_hole_mobility(site) / get_relative_permittivity(site) * hole_concentration.data[site];
 
@@ -660,9 +787,9 @@ void Morphology::calculate_MG_state_population(const PositionDependentParameter 
 				double fermi_level = get_work_function(electrode_number) + get_electrode_potential(electrode_number);
 				double energy_MG_minus = get_MG_minus(site) + electric_potential.data[site];
 
-				double electron_con_zero = get_hole_mobility(site) / get_relative_permittivity(site) * get_DOS(site) * std::min(1.0 / (exp(get_MG_minus(site) - get_work_function(electrode_number)
+				double electron_con_zero = get_hole_mobility(site) / get_relative_permittivity(site) * get_electron_trans_DOS(site) * std::min(1.0 / (exp(get_MG_minus(site) - get_work_function(electrode_number)
 					+ (electric_potential.data[site] - get_electrode_potential(electrode_number))) + 1.0), 1.0);
-				double hole_con_zero = get_electron_mobility(site) / get_relative_permittivity(site) * get_DOS(site) * std::min(1.0 / (exp(get_work_function(electrode_number) - get_MG_minus(site)
+				double hole_con_zero = get_electron_mobility(site) / get_relative_permittivity(site) * get_hole_trans_DOS(site) * std::min(1.0 / (exp(get_work_function(electrode_number) - get_MG_minus(site)
 					- (electric_potential.data[site] - get_electrode_potential(electrode_number))) + 1.0), 1.0);
 				double electron_con = get_electron_mobility(site) / get_relative_permittivity(site) * electron_concentration.data[site];
 				double hole_con = get_hole_mobility(site) / get_relative_permittivity(site) * hole_concentration.data[site];
@@ -690,7 +817,7 @@ void Morphology::calculate_MG_state_population(const PositionDependentParameter 
 		if (site[0] < points_y*(points_x - 1) && site[0] >= points_y && site[1] < points_y*(points_x - 1) && site[1] >= points_y){
 
 			// Calculate the fermi level at before contact, we only consider E- states below this and E+ above this.
-			double fermi_level = (std::min(get_HOMO(site[0]), get_HOMO(site[1])) + std::max(get_LUMO(site[0]), get_LUMO(site[1]))) / 2;
+			double fermi_level = (std::min(get_hole_trans_energy(site[0]), get_hole_trans_energy(site[1])) + std::max(get_electron_trans_energy(site[0]), get_electron_trans_energy(site[1]))) / 2;
 
 
 			// We assume that the E+ state is at site 0 and E- at site 1, if they happen to be the other way around, we swap site 0 and site 1.
@@ -700,19 +827,19 @@ void Morphology::calculate_MG_state_population(const PositionDependentParameter 
 
 			if (get_MG_plus(site[0]) != 0.0 && get_MG_minus(site[1]) != 0.0){
 				double electron_con = electron_concentration.data[site[1]];
-				double electron_con_zero = get_DOS(site[1]) * std::min(1.0 / (exp(get_MG_plus(site[0]) - get_LUMO(site[1]) + (electric_potential.data[site[0]] - electric_potential.data[site[1]])) + 1.0), 1.0);
+				double electron_con_zero = get_electron_trans_DOS(site[1]) * std::min(1.0 / (exp(get_MG_plus(site[0]) - get_electron_trans_energy(site[1]) + (electric_potential.data[site[0]] - electric_potential.data[site[1]])) + 1.0), 1.0);
 
 				double hole_con = hole_concentration.data[site[0]];
-				double hole_con_zero = get_DOS(site[0]) * std::min(1.0 / (exp(get_HOMO(site[0]) - get_MG_plus(site[0])) + 1.0), 1.0);
+				double hole_con_zero = get_hole_trans_DOS(site[0]) * std::min(1.0 / (exp(get_hole_trans_energy(site[0]) - get_MG_plus(site[0])) + 1.0), 1.0);
 
 				double C_n = get_electron_mobility(site[0], site[1]) / get_interface_relative_permittivity(pair_number);
 				double C_p = get_hole_mobility(site[0], site[1]) / get_interface_relative_permittivity(pair_number);
 
 				MG_hole_concentration.data[site[0]] = get_MG_DOS(site[0]) * (C_p * hole_con + C_n * electron_con_zero) / (C_n * (electron_con + electron_con_zero) + C_p * (hole_con + hole_con_zero));
 
-				electron_con_zero = get_DOS(site[1]) * std::min(1.0 / (exp(get_MG_minus(site[1]) - get_LUMO(site[1])) + 1.0), 1.0);
+				electron_con_zero = get_electron_trans_DOS(site[1]) * std::min(1.0 / (exp(get_MG_minus(site[1]) - get_electron_trans_energy(site[1])) + 1.0), 1.0);
 
-				hole_con_zero = get_DOS(site[0]) * std::min(1.0 / (exp(get_HOMO(site[0]) - get_MG_minus(site[1]) - (electric_potential.data[site[1]] - electric_potential.data[site[0]])) + 1.0), 1.0);
+				hole_con_zero = get_hole_trans_DOS(site[0]) * std::min(1.0 / (exp(get_hole_trans_energy(site[0]) - get_MG_minus(site[1]) - (electric_potential.data[site[1]] - electric_potential.data[site[0]])) + 1.0), 1.0);
 
 				MG_electron_concentration.data[site[1]] = get_MG_DOS(site[1]) * (C_n * electron_con + C_p * hole_con_zero) / (C_n * (electron_con + electron_con_zero) + C_p * (hole_con + hole_con_zero));
 
@@ -1390,6 +1517,39 @@ void Morphology::determine_interface_pairs(){
 
 }
 
+void Morphology::effective_temperature(){
+
+	//double effective_temperature = pow((pow(constant::temperature, 2.0) + pow(0.67*(get_electrode_potential(0) - get_electrode_potential(1))*constant::temperature * 1.5E-9 / (get_active_layer_length_x()*constant::length_norm), 2.0)), 0.5);
+	double electric_field = abs((get_electrode_potential(0) - get_electrode_potential(1))*norm_potential / (get_active_layer_length_x()*constant::length_norm));
+
+	for (int i = 0; i < material.size(); i++){
+		if (!initial_values_saved){
+			material[i].mobility_electron_initial = material[i].mobility_electron;
+			material[i].mobility_hole_initial = material[i].mobility_hole; 
+			material[i].generation_rate_initial = material[i].generation_rate;
+		}
+		material[i].mobility_electron = material[i].mobility_electron_initial*pow(10.0, (constant::temperature - 300.0) / 50.0);
+		material[i].mobility_hole = material[i].mobility_hole_initial*pow(10.0, (constant::temperature - 300.0) / 50.0);
+		material[i].generation_rate = material[i].generation_rate_initial / (1.0 + 1.205E-11*pow(constant::temperature, 2.0)*exp(2809.0 / constant::temperature)*exp(-0.4776*pow(electric_field,0.5)/constant::temperature));
+	}
+	for (int i = 0; i < material_interface.size(); i++){
+		if (!initial_values_saved){
+			material_interface[i].mobility_electron_initial = material_interface[i].mobility_electron;
+			material_interface[i].mobility_hole_initial = material_interface[i].mobility_hole;
+			material_interface[i].generation_rate_initial = material_interface[i].generation_rate;
+		}
+		material_interface[i].mobility_electron = material_interface[i].mobility_electron_initial*pow(10.0, (constant::temperature - 300.0) / 50.0);
+		material_interface[i].mobility_hole = material_interface[i].mobility_hole_initial*pow(10.0, (constant::temperature - 300.0) / 50.0);
+		material_interface[i].generation_rate = material_interface[i].generation_rate_initial / (1.0 + 1.205E-11*pow(constant::temperature, 2.0)*exp(2809.0 / constant::temperature)*exp(-0.4776*pow(electric_field, 0.5) / constant::temperature));
+	}
+	std::cout << 1.0 / (1.0 + 1.205E-11*pow(constant::temperature, 2.0)*exp(2809.0 / constant::temperature)*exp(-0.4776*pow(electric_field, 0.5) / constant::temperature)) << std::endl;
+	initial_values_saved = true;
+}
+
+bool Morphology::is_effective_temperature(){
+	return effective_temperature_activated;
+}
+
 int Morphology::get_boundary_condition(int interface_number){
 	return electrode_material_interface[interface_number].boundary_condition;
 }
@@ -1422,6 +1582,41 @@ double Morphology::get_interface_relative_permittivity(int pair_number){
 	return material_interface[interface_pair_data[pair_number].interface_material].relative_permittivity;
 }
 
+double Morphology::get_relative_permittivity(int site_one, int site_two){
+
+	if (is_cbc(site_one)){
+		return material[get_material_number(lattice[site_two])].relative_permittivity;
+	}
+	else if (is_cbc(site_two)){
+		return material[get_material_number(lattice[site_one])].relative_permittivity;
+	}
+	else if (is_electrode(site_one)){
+		return material[get_material_number(lattice[site_two])].relative_permittivity;
+	}
+	else if (is_electrode(site_two)){
+		return material[get_material_number(lattice[site_one])].relative_permittivity;
+	}
+	else if (lattice[site_one] == lattice[site_two]){
+		return material[get_material_number(lattice[site_one])].relative_permittivity;
+	}
+	else if (site_one < 0 || site_one > points_x*points_y){
+		return material[get_material_number(lattice[site_two])].relative_permittivity;
+	}
+	else if (site_two < 0 || site_two > points_x*points_y){
+		return material[get_material_number(lattice[site_one])].relative_permittivity;
+	}
+	else if (is_interface(site_one)){
+		return material_interface[interface_pair_data[get_interface_pair(site_one, site_two)].interface_material].relative_permittivity;
+	}
+
+	else{
+		std::cerr << "Relative permittivity can't be determined between two sites of different materials unless they make up an interface pair." << std::endl;
+		std::cerr << "The current sites are " << site_one << site_two << std::endl;
+		return NAN;
+	}
+
+}
+/*
 double Morphology::get_DOS(int site){
 
 	int material_number;
@@ -1444,13 +1639,8 @@ double Morphology::get_DOS(int site){
 	return material[material_number].DOS;
 
 }
-
-double Morphology::get_interface_DOS(int pair_number){
-
-	return material_interface[interface_pair_data[pair_number].interface_material].DOS;
-}
-
-double Morphology::get_LUMO(int site){
+*/
+double Morphology::get_hole_trans_DOS(int site){
 
 	int material_number;
 	if (is_cbc(site)){
@@ -1469,16 +1659,68 @@ double Morphology::get_LUMO(int site){
 	else{
 		material_number = get_material_number(lattice[site]);
 	}
-	return material[material_number].LUMO_level;
+	return material[material_number].hole_trans_DOS;
 
 }
 
-double Morphology::get_interface_LUMO(int pair_number){
+double Morphology::get_electron_trans_DOS(int site){
 
-	return material_interface[interface_pair_data[pair_number].interface_material].LUMO_level;
+	int material_number;
+	if (is_cbc(site)){
+		int neigh_site;
+		for (int n = 0; n < cbc_interface.size(); n++){
+			if (cbc_interface[n][0] == site){
+				neigh_site = cbc_interface[n][1];
+				break;
+			}
+			if (n == cbc_interface.size() - 1){
+				std::cerr << "Could not find cbc neighbour for site " << site << "." << std::endl;
+			}
+		}
+		material_number = get_material_number(lattice[neigh_site]);
+	}
+	else{
+		material_number = get_material_number(lattice[site]);
+	}
+	return material[material_number].electron_trans_DOS;
+
 }
 
-double Morphology::get_HOMO(int site){
+
+double Morphology::get_interface_DOS(int pair_number){
+
+	return material_interface[interface_pair_data[pair_number].interface_material].DOS;
+}
+
+double Morphology::get_electron_trans_energy(int site){
+
+	int material_number;
+	if (is_cbc(site)){
+		int neigh_site;
+		for (int n = 0; n < cbc_interface.size(); n++){
+			if (cbc_interface[n][0] == site){
+				neigh_site = cbc_interface[n][1];
+				break;
+			}
+			if (n == cbc_interface.size() - 1){
+				std::cerr << "Could not find cbc neighbour for site " << site << "." << std::endl;
+			}
+		}
+		material_number = get_material_number(lattice[neigh_site]);
+	}
+	else{
+		material_number = get_material_number(lattice[site]);
+	}
+	return material[material_number].electron_trans_energy;
+
+}
+
+double Morphology::get_interface_electron_trans_energy(int pair_number){
+
+	return material_interface[interface_pair_data[pair_number].interface_material].electron_trans_energy;
+}
+
+double Morphology::get_hole_trans_energy(int site){
 
 	int material_number;
 	if (convergence_boundary_condition && is_cbc(site)){
@@ -1497,13 +1739,13 @@ double Morphology::get_HOMO(int site){
 	else{
 		material_number = get_material_number(lattice[site]);
 	}
-	return material[material_number].HOMO_level;
+	return material[material_number].hole_trans_energy;
 
 }
 
-double Morphology::get_interface_HOMO(int pair_number){
+double Morphology::get_interface_hole_trans_energy(int pair_number){
 
-	return material_interface[interface_pair_data[pair_number].interface_material].HOMO_level;
+	return material_interface[interface_pair_data[pair_number].interface_material].hole_trans_energy;
 }
 
 double Morphology::get_generation_rate(int site){
@@ -1787,12 +2029,220 @@ double Morphology::get_bulk_electron_capture_coef(int site){
 	return material[material_number].bulk_electron_capture_coef;
 }
 
+double Morphology::get_bulk_electron_trap_capture_coef_electron(int site){
+
+	int material_number;
+	if (convergence_boundary_condition && is_cbc(site)){
+		int neigh_site;
+		for (int n = 0; n < cbc_interface.size(); n++){
+			if (cbc_interface[n][0] == site){
+				neigh_site = cbc_interface[n][1];
+				break;
+			}
+			if (n == cbc_interface.size() - 1){
+				std::cerr << "Could not find cbc neighbour for site " << site << "." << std::endl;
+			}
+		}
+		material_number = get_material_number(lattice[neigh_site]);
+	}
+	else{
+		material_number = get_material_number(lattice[site]);
+	}
+	return material[material_number].bulk_electron_trap_capture_coef_electron;
+}
+
+double Morphology::get_bulk_electron_trap_capture_coef_hole(int site){
+
+	int material_number;
+	if (convergence_boundary_condition && is_cbc(site)){
+		int neigh_site;
+		for (int n = 0; n < cbc_interface.size(); n++){
+			if (cbc_interface[n][0] == site){
+				neigh_site = cbc_interface[n][1];
+				break;
+			}
+			if (n == cbc_interface.size() - 1){
+				std::cerr << "Could not find cbc neighbour for site " << site << "." << std::endl;
+			}
+		}
+		material_number = get_material_number(lattice[neigh_site]);
+	}
+	else{
+		material_number = get_material_number(lattice[site]);
+	}
+	return material[material_number].bulk_electron_trap_capture_coef_hole;
+}
+
+double Morphology::get_bulk_hole_trap_capture_coef_electron(int site){
+
+	int material_number;
+	if (convergence_boundary_condition && is_cbc(site)){
+		int neigh_site;
+		for (int n = 0; n < cbc_interface.size(); n++){
+			if (cbc_interface[n][0] == site){
+				neigh_site = cbc_interface[n][1];
+				break;
+			}
+			if (n == cbc_interface.size() - 1){
+				std::cerr << "Could not find cbc neighbour for site " << site << "." << std::endl;
+			}
+		}
+		material_number = get_material_number(lattice[neigh_site]);
+	}
+	else{
+		material_number = get_material_number(lattice[site]);
+	}
+	return material[material_number].bulk_hole_trap_capture_coef_electron;
+}
+
+double Morphology::get_bulk_hole_trap_capture_coef_hole(int site){
+
+	int material_number;
+	if (convergence_boundary_condition && is_cbc(site)){
+		int neigh_site;
+		for (int n = 0; n < cbc_interface.size(); n++){
+			if (cbc_interface[n][0] == site){
+				neigh_site = cbc_interface[n][1];
+				break;
+			}
+			if (n == cbc_interface.size() - 1){
+				std::cerr << "Could not find cbc neighbour for site " << site << "." << std::endl;
+			}
+		}
+		material_number = get_material_number(lattice[neigh_site]);
+	}
+	else{
+		material_number = get_material_number(lattice[site]);
+	}
+	return material[material_number].bulk_hole_trap_capture_coef_hole;
+}
+
+
+double Morphology::get_bulk_bimolecular_recombination_coef(int site){
+
+	int material_number;
+	if (convergence_boundary_condition && is_cbc(site)){
+		int neigh_site;
+		for (int n = 0; n < cbc_interface.size(); n++){
+			if (cbc_interface[n][0] == site){
+				neigh_site = cbc_interface[n][1];
+				break;
+			}
+			if (n == cbc_interface.size() - 1){
+				std::cerr << "Could not find cbc neighbour for site " << site << "." << std::endl;
+			}
+		}
+		material_number = get_material_number(lattice[neigh_site]);
+	}
+	else{
+		material_number = get_material_number(lattice[site]);
+	}
+	return material[material_number].bulk_bimolecular_recombination_coef;
+}
+
+double Morphology::get_electron_trap_energy(int site){
+
+	int material_number;
+	if (convergence_boundary_condition && is_cbc(site)){
+		int neigh_site;
+		for (int n = 0; n < cbc_interface.size(); n++){
+			if (cbc_interface[n][0] == site){
+				neigh_site = cbc_interface[n][1];
+				break;
+			}
+			if (n == cbc_interface.size() - 1){
+				std::cerr << "Could not find cbc neighbour for site " << site << "." << std::endl;
+			}
+		}
+		material_number = get_material_number(lattice[neigh_site]);
+	}
+	else{
+		material_number = get_material_number(lattice[site]);
+	}
+	return material[material_number].electron_trap_energy;
+}
+
+double Morphology::get_hole_trap_energy(int site){
+
+	int material_number;
+	if (convergence_boundary_condition && is_cbc(site)){
+		int neigh_site;
+		for (int n = 0; n < cbc_interface.size(); n++){
+			if (cbc_interface[n][0] == site){
+				neigh_site = cbc_interface[n][1];
+				break;
+			}
+			if (n == cbc_interface.size() - 1){
+				std::cerr << "Could not find cbc neighbour for site " << site << "." << std::endl;
+			}
+		}
+		material_number = get_material_number(lattice[neigh_site]);
+	}
+	else{
+		material_number = get_material_number(lattice[site]);
+	}
+	return material[material_number].hole_trap_energy;
+}
+
+double Morphology::get_electron_trap_DOS(int site){
+
+	int material_number;
+	if (convergence_boundary_condition && is_cbc(site)){
+		int neigh_site;
+		for (int n = 0; n < cbc_interface.size(); n++){
+			if (cbc_interface[n][0] == site){
+				neigh_site = cbc_interface[n][1];
+				break;
+			}
+			if (n == cbc_interface.size() - 1){
+				std::cerr << "Could not find cbc neighbour for site " << site << "." << std::endl;
+			}
+		}
+		material_number = get_material_number(lattice[neigh_site]);
+	}
+	else{
+		material_number = get_material_number(lattice[site]);
+	}
+	return material[material_number].electron_trap_DOS;
+}
+
+double Morphology::get_hole_trap_DOS(int site){
+
+	int material_number;
+	if (convergence_boundary_condition && is_cbc(site)){
+		int neigh_site;
+		for (int n = 0; n < cbc_interface.size(); n++){
+			if (cbc_interface[n][0] == site){
+				neigh_site = cbc_interface[n][1];
+				break;
+			}
+			if (n == cbc_interface.size() - 1){
+				std::cerr << "Could not find cbc neighbour for site " << site << "." << std::endl;
+			}
+		}
+		material_number = get_material_number(lattice[neigh_site]);
+	}
+	else{
+		material_number = get_material_number(lattice[site]);
+	}
+	return material[material_number].hole_trap_DOS;
+}
+
+
 double Morphology::get_interface_electron_capture_coef(int pair_number){
 	return material_interface[interface_pair_data[pair_number].interface_material].interface_electron_capture_coef;
 }
 
 double Morphology::get_interface_hole_capture_coef(int pair_number){
 	return material_interface[interface_pair_data[pair_number].interface_material].interface_hole_capture_coef;
+}
+
+double Morphology::get_interface_bimolecular_recombination_coef_1(int pair_number){
+	return material_interface[interface_pair_data[pair_number].interface_material].interface_bimolecular_recombination_coef_1;
+}
+
+double Morphology::get_interface_bimolecular_recombination_coef_2(int pair_number){
+	return material_interface[interface_pair_data[pair_number].interface_material].interface_bimolecular_recombination_coef_2;
 }
 
 double Morphology::get_interface_trap_electron_capture_coef(int pair_number){
@@ -1972,6 +2422,34 @@ double Morphology::get_positive_ion_eq_conc(int site){
 
 }
 
+
+double Morphology::get_max_ion_concentration(int site){
+
+	int material_number;
+	if (convergence_boundary_condition && is_cbc(site)){
+		int neigh_site;
+		for (int n = 0; n < cbc_interface.size(); n++){
+			if (cbc_interface[n][0] == site){
+				neigh_site = cbc_interface[n][1];
+				break;
+			}
+			if (n == cbc_interface.size() - 1){
+				std::cerr << "Could not find cbc neighbour for site " << site << "." << std::endl;
+			}
+		}
+		material_number = get_material_number(lattice[neigh_site]);
+	}
+	else if (is_electrode(site)){
+		return 0.0;
+	}
+	else{
+		material_number = get_material_number(lattice[site]);
+	}
+	return material[material_number].max_ion_concentration;
+
+
+}
+
 int Morphology::get_electrode_number(int electrode_lattice_number){
 
 	int electrode_number;
@@ -2023,8 +2501,17 @@ double Morphology::get_work_function(int electrode_number){
 	return electrode[electrode_number].work_function;
 }
 
-double Morphology::get_active_layer_lenght_x(){
-	return active_layer_lenght_x;
+double Morphology::get_surface_recombination_velocity_electron(int interface_number){
+	return electrode_material_interface[interface_number].surface_recombination_velocity_electron;
+}
+
+double Morphology::get_surface_recombination_velocity_hole(int interface_number){
+	return electrode_material_interface[interface_number].surface_recombination_velocity_hole;
+}
+
+
+double Morphology::get_active_layer_length_x(){
+	return active_layer_length_x;
 }
 
 bool Morphology::is_interface(int site){
@@ -2166,4 +2653,21 @@ bool Morphology::get_convergence_boundary_condition(){
 
 bool Morphology::ion_transport_activated(){
 	return ion_transport;
+}
+
+bool Morphology::surface_recombination_activated(int interface_number){
+	return electrode_material_interface[interface_number].surface_recombination;
+}
+
+bool Morphology::is_light_on(){
+	return light_on_flag;
+}
+
+
+void Morphology::light_off(){
+	light_on_flag = false;
+}
+
+void Morphology::light_on(){
+	light_on_flag = true;
 }

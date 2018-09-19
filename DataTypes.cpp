@@ -76,6 +76,7 @@ void PositionDependentParameter::read_from_file(std::string file_name_template, 
 	return;
 }
 
+
 void PositionDependentParameter::output_data(std::string file_name){
 
 	std::ofstream to_file;
@@ -135,30 +136,97 @@ void PositionDependentParameter::initialize(double norm){
 
 void Experiment::initialize(pt::ptree settings){
 
-	data_points = settings.get<int>("experiment.data_points");
-	anode_potential.resize(data_points, 0.0);
-	cathode_potential.resize(data_points, 0.0);
-	time.resize(data_points, 0.0);
-
 	double norm_potential = constant::boltzmann * constant::temperature / constant::elementary_charge;
+	experiment_iv = settings.get<bool>("experiment.iv",false);
+	electrostatics = settings.get<bool>("experiment.electrostatics",false);
+	experiment_CELIV = settings.get<bool>("experiment.CELIV", false);
+	experiment_transient_photocurrent = settings.get<bool>("experiment.transient_photocurrent", false);
 
-	anode_potential[0] = settings.get<double>("experiment.anode_potential_initial") / norm_potential;
-	cathode_potential[0] = settings.get<double>("experiment.cathode_potential_initial") / norm_potential;
-
-	potential_step = settings.get<double>("experiment.potential_step") / norm_potential;
-
-	iterate_forward = settings.get<bool>("numerics.iterate_forward", false);
-
-	experiment_iv = settings.get<bool>("experiment.iv");
+	output_full_data = settings.get<bool>("general.output_full_data", true);
 
 	if (experiment_iv){
+
+		data_points = settings.get<int>("experiment.data_points");
+		anode_potential.resize(data_points, 0.0);
+		cathode_potential.resize(data_points, 0.0);
+		time.resize(data_points, 0.0);
+
+		anode_potential[0] = settings.get<double>("experiment.anode_potential_initial") / norm_potential;
+		cathode_potential[0] = settings.get<double>("experiment.cathode_potential_initial") / norm_potential;
+
+		potential_step = settings.get<double>("experiment.potential_step") / norm_potential;
+
+		iterate_forward = settings.get<bool>("numerics.iterate_forward", false);
+
+
 		for (int i = 1; i < data_points; i++){
 			anode_potential[i] = anode_potential[0] + (double)i * potential_step;
-			cathode_potential[i] = 0.0;
 		}
 	}
-	if (settings.get<bool>("general.time_dependent")){
-		time_step = settings.get<double>("experiment.time_step");
+	else if (electrostatics){
+		for (int a = 0; a < MAX_NUMBER_ELECTRODES; a++){
+			double electrode_potential;
+			std::ostringstream oss_node;
+			oss_node << "experiment.electrode_" << a;
+			std::string node_name = oss_node.str();
+			electrode_potential = settings.get<double>(node_name.c_str(), 0.0) / norm_potential;
+			electrode_potentials.push_back(electrode_potential);
+
+		}
+	}
+	else if (experiment_CELIV){
+
+		double norm_potential = constant::boltzmann * constant::temperature / constant::elementary_charge;
+		double norm_time = pow(constant::length_norm, 2) / (norm_potential*constant::mobility_norm);
+
+		voltage_offset = settings.get<double>("experiment.offset_voltage", 0.0)/norm_potential;
+		voltage_rise_speed = settings.get<double>("experiment.voltage_rise_speed")/(norm_potential/norm_time);
+		time_step = settings.get<double>("experiment.time_step")/norm_time;
+		pulse_length = settings.get<double>("experiment.pulse_length")/norm_time;
+
+		data_points = settings.get<double>("experiment.data_points");
+
+		anode_potential.resize(data_points, 0.0);
+		cathode_potential.resize(data_points, 0.0);
+		time.resize(data_points, 0.0);
+
+		iterate_forward = settings.get<bool>("numerics.iterate_forward", true);
+
+		for (int i = 0; i < data_points; i++){
+
+			time[i] = (double)i * time_step;
+			if (time[i] <= pulse_length){
+				anode_potential[i] = -voltage_offset - voltage_rise_speed * time[i];
+			}
+			else{
+				anode_potential[i] = -voltage_offset;
+			}
+		}
+
+	}
+	else if (experiment_transient_photocurrent){
+
+		double norm_potential = constant::boltzmann * constant::temperature / constant::elementary_charge;
+		double norm_time = pow(constant::length_norm, 2) / (norm_potential*constant::mobility_norm);
+
+		pulse_length = settings.get<double>("experiment.pulse_length") / norm_time;
+		time_step = settings.get<double>("experiment.time_step") / norm_time;
+		voltage_offset = settings.get<double>("experiment.offset_voltage", 0.0) / norm_potential;
+
+		data_points = settings.get<double>("experiment.data_points");
+
+		anode_potential.resize(data_points, 0.0);
+		cathode_potential.resize(data_points, 0.0);
+		time.resize(data_points, 0.0);
+
+		for (int i = 0; i < data_points; i++){
+
+			time[i] = (double)i * time_step;
+
+			anode_potential[i] = voltage_offset;
+
+		}
+
 	}
 
 	std::cout << "Measurement initialized." << std::endl;

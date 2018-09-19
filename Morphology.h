@@ -15,24 +15,28 @@ class Morphology{
 	std::string dopants_file;		// The name of the dopants file, any distribution of dopants can be given to the program
 	void read_dopants();			// Reads the dopants file and stores it in "dopants", declared below (under public)
 
-	double active_layer_lenght_x, active_layer_lenght_y;			// Stores the lenght of the active layer in x-direction (perpendicular to electrode surfaces) and y-direction (parallell to electrode surfaces)
+	double active_layer_length_x, active_layer_length_y;			// Stores the length of the active layer in x-direction (perpendicular to electrode surfaces) and y-direction (parallell to electrode surfaces)
 																	// Add modes and descriptions for different types of generations and recombinaition here.
+	double norm_potential, norm_concentration, norm_current, norm_rate;
+
 	int initial_guess;
 	bool convergence_boundary_condition;
 	int convergence_boundary_condition_lattice_number;
 	void map_cbc();
 	std::vector<bool> is_cbc_lattice;
 
+	bool light_on_flag = true;
 	bool ion_transport = false;
+	bool effective_temperature_activated = false;
 
-	std::vector<bool> recombination_mode = std::vector<bool>(3);
+	std::vector<bool> recombination_mode = std::vector<bool>(4);
 	// 0: Recombination occurs between charges at the same point. 
 	// 1: Recombination between charges at opposite sides of an interface occurs.
 	// 2: Recombination between a free charge and a charge in an mid-gap state.
 
 	std::vector<bool> generation_mode = std::vector<bool>(3);
 	// 0: Generation occurs everywhere in the material (The rate of generation is set separately for each material). 
-	// 1: Generation occurs across interfaces, holes are generated in the material with higher HOMO and electrons in that with lower LUMO (The rate of generation is set separately for each interface).
+	// 1: Generation occurs across interfaces, holes are generated in the material with higher hole_trans_energy and electrons in that with lower electron_trans_energy (The rate of generation is set separately for each interface).
 
 public:
 
@@ -79,6 +83,12 @@ public:
 	void calculate_MG_state_population(const PositionDependentParameter &electric_potential, const PositionDependentParameter &electron_concentration, const PositionDependentParameter &hole_concentration);
 	void set_MG_initial_guess();
 
+
+	// Introduces temperature-dependence for the mobility and generation rate and adjusts these by an effective temperature
+	void effective_temperature();
+	bool is_effective_temperature();
+	bool initial_values_saved = false;
+
 	// Currently does not do what it is supposed to. Under construction!
 	int get_boundary_condition(int interface_number);
 
@@ -89,32 +99,54 @@ public:
 	double get_electron_mobility(int site);
 	double get_electron_mobility(int site_one, int site_two);
 	double get_relative_permittivity(int site);
+	double get_relative_permittivity(int site_one, int site_two);
 	double get_interface_relative_permittivity(int pair_number);
 	double get_generation_rate(int site);
 	double get_interface_generation_rate(int pair_number);
 	void get_rate_generation(int site, double generation_rate[2], const PositionDependentParameter electrical_potential);
 	double get_DOS(int site);
 	double get_interface_DOS(int pair_number);
-	double get_LUMO(int site);
-	double get_interface_LUMO(int pair_number);
-	double get_HOMO(int site);
-	double get_interface_HOMO(int pair_number);
+	double get_electron_trans_energy(int site);
+	double get_electron_trans_DOS(int site);
+	double get_interface_electron_trans_energy(int pair_number);
+	double get_hole_trans_energy(int site);
+	double get_hole_trans_DOS(int site);
+	double get_interface_hole_trans_energy(int pair_number);
 	double get_MG_minus(int site);
 	double get_MG_plus(int site);
 	double get_MG_DOS(int site);
-	double get_active_layer_lenght_x();
+	double get_active_layer_length_x();
 
 	double get_bulk_reduced_recombination_coef(int site);
 	double get_bulk_hole_capture_coef(int site);
 	double get_bulk_electron_capture_coef(int site);
+	double get_bulk_hole_trap_capture_coef_electron(int site);
+	double get_bulk_hole_trap_capture_coef_hole(int site);
+	double get_bulk_electron_trap_capture_coef_electron(int site);
+	double get_bulk_electron_trap_capture_coef_hole(int site);
+
+	double get_bulk_bimolecular_recombination_coef(int site);
 
 	double get_interface_reduced_recombination_coef(int pair_number);
 	double get_interface_hole_capture_coef(int pair_number);
 	double get_interface_electron_capture_coef(int pair_number);
 
+	double get_interface_bimolecular_recombination_coef_1(int pair_number);
+	double get_interface_bimolecular_recombination_coef_2(int pair_number);
+
 	double get_interface_trap_reduced_recombination_coef(int pair_number);
 	double get_interface_trap_hole_capture_coef(int pair_number);
 	double get_interface_trap_electron_capture_coef(int pair_number);
+
+	double get_electron_trap_energy(int site);
+	double get_electron_trap_DOS(int site);
+	double get_hole_trap_energy(int site);
+	double get_hole_trap_DOS(int site);
+
+	double get_interface_hole_trap_energy(int interface_number);
+	double get_interface_electron_trap_energy(int interface_number);
+	double get_interface_hole_trap_DOS(int interface_number);
+	double get_interface_electron_trap_DOS(int interface_number);
 
 	double get_positive_ion_mobility(int site);
 	double get_negative_ion_mobility(int site);
@@ -127,6 +159,8 @@ public:
 	bool negative_ion_transport(int site);
 	bool positive_ion_transport(int site);
 
+	double get_max_ion_concentration(int site);
+
 	int get_material_number(int material_lattice_number);
 
 	int get_electrode_interface_number(int site, int electrode_number);
@@ -136,6 +170,8 @@ public:
 	double get_electrode_electron_concentration(int interface_number);
 	double get_electrode_hole_concentration(int interface_number);
 	double get_work_function(int electrode_number);
+	double get_surface_recombination_velocity_electron(int interface_number);
+	double get_surface_recombination_velocity_hole(int interface_number);
 
 	double get_electrode_trap_reduced_recombination_coef(int electrode_number);
 
@@ -154,7 +190,12 @@ public:
 	bool is_electrode(int site);
 	bool is_electrode_interface(int site);
 	bool is_cbc(int site);
+	bool surface_recombination_activated(int interface_number);
 	bool get_convergence_boundary_condition();
 	bool ion_transport_activated();
+
+	bool is_light_on();
+	void light_off();
+	void light_on();
 
 };

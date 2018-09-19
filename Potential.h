@@ -29,10 +29,13 @@ public:
 	PositionDependentParameter electrochemical_electron;
 	PositionDependentParameter electrochemical_hole;
 
+	PositionDependentParameter displacement_current;
+
 	bool has_converged();
 
 	void initialize(pt::ptree &settings);
 	void solve(Morphology &material, const PositionDependentParameter &electron_concentration, const PositionDependentParameter &hole_concentration, const PositionDependentParameter &negative_ion_concentration, const PositionDependentParameter &positive_ion_concentration); // Calculates the next iterative solution for the electrical potential.
+	void solve_one_d(Morphology &material, const PositionDependentParameter &electron_concentration, const PositionDependentParameter &hole_concentration, const PositionDependentParameter &negative_ion_concentration, const PositionDependentParameter &positive_ion_concentration);
 	void set_boundary_conditions(Morphology device_properties);
 	void set_initial_guess(Morphology device_properties, std::string file_name_template, int file_number);
 
@@ -41,6 +44,8 @@ public:
 	void change_sweep_direction();
 
 	void calculate_electrical_potential(int i, int j, Morphology &material, const PositionDependentParameter &electron_concentration, const PositionDependentParameter &hole_concentration, const PositionDependentParameter &negative_ion_concentration, const PositionDependentParameter &positive_ion_concentration);
+
+	void calculate_displacement_current(Morphology &material, const PositionDependentParameter previous_potential, const double time_step);
 
 	void next_iterative_stage();
 	bool final_iterative_stage_reached();
