@@ -50,6 +50,7 @@ public:
 
 	// Calculates the concentrations of this type of charge for the given potential and current data in rate and rate_coef.
 	void solve(Morphology &material, const Potential &potential); 
+	void solve_inverse(Morphology &material, const Potential &potential);
 	void solve_one_d(Morphology &material, const Potential &potential);
 	void solve(Morphology &material, const Potential &potential, const PositionDependentParameter &previous_time_concentraiton, double time_step);
 	void solve_one_d(Morphology &material, const Potential &potential, const PositionDependentParameter &previous_time_concentration, double time_step);

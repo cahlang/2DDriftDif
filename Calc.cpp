@@ -32,15 +32,15 @@ namespace calc{
 
 				int site = i*net_rate.points_y + j;
 				int site_x_plus = site + net_rate.points_y;
-				if (device_parameters.is_electrode(site) || device_parameters.is_electrode(site_x_plus)){
+				if ((device_parameters.is_electrode(site) || device_parameters.is_electrode(site_x_plus))){
 					number_of_rows--;
 					break;
 				}
-
+				// DO SOMETHING ABOUT THIS!
 				row_current[i] += electron_current.data[site] + hole_current.data[site] + displacement_current.data[site];
-				if (net_rate.data[site] != 0.0 && net_rate.data[site_x_plus] != 0.0){
-					row_current[i] += (net_rate.data[site_x_plus] - net_rate.data[site]) * net_rate.spacing_x * 0.5;
-				}
+				if (abs(net_rate.data[site_x_plus] * net_rate.spacing_x) >= abs(1E-7*(electron_current.data[site] + hole_current.data[site])) && abs(net_rate.data[site] * net_rate.spacing_x) >= abs(1E-7*(electron_current.data[site] + hole_current.data[site])))
+				row_current[i] += (net_rate.data[site_x_plus] - net_rate.data[site]) * net_rate.spacing_x * 0.5;
+				
 
 
 			}

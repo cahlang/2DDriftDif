@@ -18,6 +18,6 @@ namespace misc{
 	}
 
 	double single_level_fermi_dist(double fermi_level, double energy){
-		return std::min(1.0 / (exp(fermi_level - energy) + 1.0),1.0);
+		return 1.0 / (exp(fermi_level - energy) + 1.0);
 	}
 }

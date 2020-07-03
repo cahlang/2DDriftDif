@@ -7,8 +7,11 @@
 #include <cmath>
 #include <string>
 #include <boost/property_tree/ptree.hpp>
+#include <Eigen/Sparse>
+
 
 namespace pt = boost::property_tree;
+using namespace Eigen;
 
 void Potential::initialize(pt::ptree &settings){
 
@@ -30,6 +33,89 @@ void Potential::initialize(pt::ptree &settings){
 
 	std::cout << "Potential initialized." << std::endl;
 
+	return;
+
+}
+
+void Potential::solve_inverse(Morphology &material, const PositionDependentParameter &electron_concentration, const PositionDependentParameter &hole_concentration, const PositionDependentParameter &negative_ion_concentration, const PositionDependentParameter &positive_ion_concentration){
+
+	PositionDependentParameter previous = electrical;
+
+	flag_has_converged = true;
+
+	int size = (electrical.points_x-2)*electrical.points_y;
+	SparseMatrix<double> A(size, size);
+	A.reserve(VectorXi::Constant(size, 6));
+	VectorXd b(size), x(size);
+
+	for (int i = 1; i < electrical.points_x-1; i++){
+		for (int j = 0; j < electrical.points_y; j++){
+
+			int site, site_x_minus, site_x_plus, site_y_minus, site_y_plus;
+
+			site = i * electrical.points_y + j; 
+
+			if (electrical.calculate_this[site] == true){
+
+				site_x_minus = site - electrical.points_y;
+				site_x_plus = site + electrical.points_y;
+				if (j != 0)
+					site_y_minus = site - 1;
+				else
+					site_y_minus = site - 1 + electrical.points_y;
+				if (j != electrical.points_y - 1)
+					site_y_plus = site + 1;
+				else
+					site_y_plus = site + 1 - electrical.points_y;
+
+				A.insert(site - electrical.points_y, site - electrical.points_y) = -(material.get_relative_permittivity(site, site_x_minus) + material.get_relative_permittivity(site, site_x_plus)) / pow(electrical.spacing_x, 2.0)
+					- (material.get_relative_permittivity(site, site_y_minus) + material.get_relative_permittivity(site, site_y_plus)) / pow(electrical.spacing_y, 2.0) + (electron_concentration.data[site] + hole_concentration.data[site]);
+				if (i > 1)
+					A.insert(site - electrical.points_y, site_x_minus - electrical.points_y) = material.get_relative_permittivity(site, site_x_minus) / pow(electrical.spacing_x, 2.0);
+
+				if (i < electrical.points_x - 2)
+					A.insert(site - electrical.points_y, site_x_plus - electrical.points_y) = material.get_relative_permittivity(site, site_x_plus) / pow(electrical.spacing_x, 2.0);
+
+				A.insert(site - electrical.points_y, site_y_minus - electrical.points_y) = material.get_relative_permittivity(site, site_y_minus) / pow(electrical.spacing_y, 2.0);
+				A.insert(site - electrical.points_y, site_y_plus - electrical.points_y) = material.get_relative_permittivity(site, site_y_plus) / pow(electrical.spacing_y, 2.0);
+
+				b(site - electrical.points_y) = electron_concentration.data[site] - hole_concentration.data[site] - material.dopants.data[site] + material.MG_electron_concentration.data[site]
+					- material.MG_hole_concentration.data[site] + (electron_concentration.data[site] + hole_concentration.data[site]) * previous.data[site];
+				if (i == 1)
+					b(site - electrical.points_y) += -material.get_relative_permittivity(site, site_x_minus) * material.get_electrode_potential(0) / pow(electrical.spacing_x, 2.0);
+				if (i == electrical.points_x - 2)
+					b(site - electrical.points_y) += -material.get_relative_permittivity(site, site_x_plus) * material.get_electrode_potential(1) / pow(electrical.spacing_x, 2.0);
+
+				if (material.negative_ion_transport(site)){
+					b(site - electrical.points_y) += negative_ion_concentration.data[site];
+				}
+				if (material.positive_ion_transport(site)){
+					b(site - electrical.points_y) -= positive_ion_concentration.data[site];
+				}
+
+			}
+		}
+	}
+
+	SparseLU<SparseMatrix<double>> solver;
+	A.makeCompressed();
+	solver.compute(A);
+
+	if (solver.info() != Success) {
+		std::cerr << "Factorization failed" << std::endl;
+		return;
+	}
+	x = solver.solve(b);
+
+	for (int site = 0; site < size; site++){
+		if (electrical.calculate_this[site + electrical.points_y] == true)
+			electrical.data[site + electrical.points_y] = x(site);
+		if (fabs(electrical.data[site + electrical.points_y] - previous.data[site + electrical.points_y]) >= c_convergence[iteration_stage] * fabs(electrical.data[site + electrical.points_y]) + 1E-15){
+			flag_has_converged = false;
+
+		}
+
+	}
 	return;
 
 }
@@ -63,7 +149,7 @@ void Potential::solve(Morphology &material, const PositionDependentParameter &el
 	}
 	change_sweep_direction();
 
-	if (material.get_convergence_boundary_condition()){
+	if (material.get_neumann_zero_boundary()){
 		for (int site = 0; site < material.cbc_interface.size(); site++){
 			electrical.data[material.cbc_interface[site][0]] = electrical.data[material.cbc_interface[site][1]];
 		}
@@ -262,7 +348,7 @@ void Potential::set_boundary_conditions(Morphology device_properties){
 		}
 	}
 
-	if (device_properties.get_convergence_boundary_condition()){
+	if (device_properties.get_neumann_zero_boundary()){
 		for (int site = 0; site < electrical.points_x*electrical.points_y; site++){
 			if (device_properties.is_cbc(site)){
 				electrical.data[site] = 0.0;
@@ -345,7 +431,7 @@ void Potential::set_initial_guess(Morphology device_properties, std::string file
 		std::cerr << "The chosen initial guess number could not be found" << std::endl;
 	}
 
-	if (device_properties.get_convergence_boundary_condition()){
+	if (device_properties.get_neumann_zero_boundary()){
 		for (int site = 0; site < device_properties.cbc_interface.size(); site++){
 			electrical.data[device_properties.cbc_interface[site][0]] = electrical.data[device_properties.cbc_interface[site][1]];
 			electrical.calculate_this[device_properties.cbc_interface[site][0]] = false;

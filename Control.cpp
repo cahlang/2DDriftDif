@@ -40,8 +40,8 @@ namespace control{
 		constant::mobility_norm = settings.get<double>("constants.mobility_normalization");
 		constant::temperature = settings.get<double>("constants.temperature");
 
-		PositionDependentParameter::spacing_x = settings.get<double>("general.length_x") / ((double)PositionDependentParameter::points_x - 1.0) / constant::length_norm;
-		PositionDependentParameter::spacing_y = settings.get<double>("general.length_y") / ((double)PositionDependentParameter::points_y - 1.0) / constant::length_norm;
+		PositionDependentParameter::spacing_x = settings.get<double>("general.length_x") / ((double)PositionDependentParameter::points_x) / constant::length_norm;
+		PositionDependentParameter::spacing_y = settings.get<double>("general.length_y") / ((double)PositionDependentParameter::points_y) / constant::length_norm;
 
 		mid_gap_states = settings.get<bool>("general.mid_gap_states", false);
 
@@ -80,27 +80,18 @@ namespace control{
 			if (electron.concentration.points_y == 1)
 				potential.solve_one_d(material, electron.concentration, hole.concentration, negative_ion.concentration, positive_ion.concentration);
 			else
-			potential.solve(material, electron.concentration, hole.concentration, negative_ion.concentration, positive_ion.concentration);
-			if (counter % 2 == 0){
-				if (electron.concentration.points_y == 1){
-					electron.solve_one_d(material, potential);
-					hole.solve_one_d(material, potential);
-				}
-				else{
-					electron.solve(material, potential);
-					hole.solve(material, potential);
-				}
+				potential.solve_inverse(material, electron.concentration, hole.concentration, negative_ion.concentration, positive_ion.concentration);
+
+
+			if (electron.concentration.points_y == 1){
+				electron.solve_one_d(material, potential);
+				hole.solve_one_d(material, potential);
 			}
 			else{
-				if (electron.concentration.points_y == 1){
-					hole.solve_one_d(material, potential);
-					electron.solve_one_d(material, potential);
-				}
-				else{
-					hole.solve(material, potential);
-					electron.solve(material, potential);
-				}
+				electron.solve_inverse(material, potential);
+				hole.solve_inverse(material, potential);
 			}
+
 			if (mid_gap_states)
 				material.calculate_MG_state_population(potential.electrical, electron.concentration, hole.concentration);
 
@@ -108,6 +99,8 @@ namespace control{
 				negative_ion.ion_solve(material, potential);
 				positive_ion.ion_solve(material, potential);
 			}
+
+
 
 			counter++;
 
@@ -217,8 +210,8 @@ namespace control{
 					electron.solve(material, potential, previous_electroncon_concentration, time_step);
 				}
 			}
-			if (mid_gap_states)
-				material.calculate_MG_state_population(potential.electrical, electron.concentration, hole.concentration);
+		//	if (mid_gap_states)
+		//		material.calculate_MG_state_population(potential.electrical, electron.concentration, hole.concentration);
 
 			if (material.ion_transport_activated()){
 				negative_ion.ion_solve(material, potential);
@@ -363,6 +356,10 @@ namespace control{
 					hole.concentration.output_data("holecon", i);
 					electron.current_x.output_data("ecurrentx", i);
 					hole.current_x.output_data("hcurrentx", i);
+					if (potential.electrical.points_y > 1){
+						hole.current_y.output_data("hcurrenty", i);
+						electron.current_y.output_data("ecurrenty", i);
+					}
 					potential.electrochemical_electron.output_data("electron_fermi_level", i);
 					potential.electrochemical_hole.output_data("hole_fermi_level", i);
 					electron.rate.output_data("erate", i);
@@ -441,7 +438,7 @@ namespace control{
 				net_rate.output_data("rate.dat");
 			
 		}
-		else if (measurement.experiment_CELIV){
+		else if (measurement.experiment_CELIV || measurement.experiment_PhotoCELIV){
 
 			measurement.set_current_data_point(0);
 
@@ -467,6 +464,18 @@ namespace control{
 				if (morphology.is_effective_temperature()){
 					morphology.effective_temperature();
 				}
+
+				if (morphology.is_field_dependent_mobility() && i == 0){
+					morphology.set_initial_field_dependent_mobility();
+				}
+				else if (morphology.is_field_dependent_mobility()){
+					morphology.calculate_field_dependent_mobility(previous_potential);
+				}
+
+				if (measurement.experiment_PhotoCELIV && i == 1)
+					morphology.light_on();
+				else if (measurement.experiment_PhotoCELIV)
+					morphology.light_off();
 
 				potential.set_boundary_conditions(morphology);
 				if (!measurement.iterate_forward || i == 0)

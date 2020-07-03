@@ -19,15 +19,21 @@ class Morphology{
 																	// Add modes and descriptions for different types of generations and recombinaition here.
 	double norm_potential, norm_concentration, norm_current, norm_rate;
 
+	// 
+
 	int initial_guess;
-	bool convergence_boundary_condition;
-	int convergence_boundary_condition_lattice_number;
-	void map_cbc();
-	std::vector<bool> is_cbc_lattice;
+
+
+	bool neumann_zero_boundary;
+	int neumann_zero_boundary_lattice_number;
+	void map_neumann_zero_boundary();
+	std::vector<bool> is_neumann_zero_boundary;
 
 	bool light_on_flag = true;
 	bool ion_transport = false;
 	bool effective_temperature_activated = false;
+	bool field_dependent_mobility_activated = false;
+	PositionDependentParameter field_dependent_mobility_electron, field_dependent_mobility_hole;
 
 	std::vector<bool> recombination_mode = std::vector<bool>(4);
 	// 0: Recombination occurs between charges at the same point. 
@@ -37,6 +43,10 @@ class Morphology{
 	std::vector<bool> generation_mode = std::vector<bool>(3);
 	// 0: Generation occurs everywhere in the material (The rate of generation is set separately for each material). 
 	// 1: Generation occurs across interfaces, holes are generated in the material with higher hole_trans_energy and electrons in that with lower electron_trans_energy (The rate of generation is set separately for each interface).
+
+	int generation_profile_type = 0;
+	std::vector<double> position_dependent_generation_rate;
+	void create_generation_profile(pt::ptree & settings);
 
 public:
 
@@ -87,6 +97,9 @@ public:
 	// Introduces temperature-dependence for the mobility and generation rate and adjusts these by an effective temperature
 	void effective_temperature();
 	bool is_effective_temperature();
+	bool is_field_dependent_mobility();
+	void calculate_field_dependent_mobility(PositionDependentParameter electric_potential);
+	void set_initial_field_dependent_mobility();
 	bool initial_values_saved = false;
 
 	// Currently does not do what it is supposed to. Under construction!
@@ -96,8 +109,13 @@ public:
 	// The required input has been selected based on convenience when dealing with the equations. However, the pair number is always known for a pair of sites.
 	double get_hole_mobility(int site);
 	double get_hole_mobility(int site_one, int site_two);
+	double get_hole_mobility_initial(int site_one, int site_two);
 	double get_electron_mobility(int site);
 	double get_electron_mobility(int site_one, int site_two);
+	double get_electron_mobility_initial(int site_one, int site_two);
+	double get_interface_hole_transfer_velocity(int pair_number);
+	double get_interface_electron_transfer_velocity(int pair_number);
+
 	double get_relative_permittivity(int site);
 	double get_relative_permittivity(int site_one, int site_two);
 	double get_interface_relative_permittivity(int pair_number);
@@ -117,6 +135,12 @@ public:
 	double get_MG_DOS(int site);
 	double get_active_layer_length_x();
 
+	double get_field_dependent_hole_mobility(int site_one, int site_two, double electric_field);
+	double get_field_dependent_electron_mobility(int site_one, int site_two, double electric_field);
+	double get_field_dependent_mobility_coef(int site);
+	double get_interface_field_dependent_mobility_coef(int pair_number);
+	double get_field_dependent_mobility_coef(int site_one, int site_two);
+
 	double get_bulk_reduced_recombination_coef(int site);
 	double get_bulk_hole_capture_coef(int site);
 	double get_bulk_electron_capture_coef(int site);
@@ -135,18 +159,28 @@ public:
 	double get_interface_bimolecular_recombination_coef_2(int pair_number);
 
 	double get_interface_trap_reduced_recombination_coef(int pair_number);
-	double get_interface_trap_hole_capture_coef(int pair_number);
-	double get_interface_trap_electron_capture_coef(int pair_number);
+	double get_interface_hole_trap_hole_capture_coef(int pair_number);
+	double get_interface_hole_trap_electron_capture_coef(int pair_number);
+	double get_interface_electron_trap_hole_capture_coef(int pair_number);
+	double get_interface_electron_trap_electron_capture_coef(int pair_number);
+
+	int get_hole_trap_material_number(int pair_number);
+	int get_electron_trap_material_number(int pair_number);
 
 	double get_electron_trap_energy(int site);
 	double get_electron_trap_DOS(int site);
 	double get_hole_trap_energy(int site);
 	double get_hole_trap_DOS(int site);
 
-	double get_interface_hole_trap_energy(int interface_number);
-	double get_interface_electron_trap_energy(int interface_number);
-	double get_interface_hole_trap_DOS(int interface_number);
-	double get_interface_electron_trap_DOS(int interface_number);
+	double get_interface_hole_trap_energy(int pair_number);
+	double get_interface_electron_trap_energy(int pair_number);
+	double get_interface_hole_trap_DOS(int pair_number);
+	double get_interface_electron_trap_DOS(int pair_number);
+
+	double get_electrode_interface_hole_trap_energy(int interface_number);
+	double get_electrode_interface_electron_trap_energy(int interface_number);
+	double get_electrode_interface_hole_trap_DOS(int interface_number);
+	double get_electrode_interface_electron_trap_DOS(int interface_number);
 
 	double get_positive_ion_mobility(int site);
 	double get_negative_ion_mobility(int site);
@@ -191,7 +225,7 @@ public:
 	bool is_electrode_interface(int site);
 	bool is_cbc(int site);
 	bool surface_recombination_activated(int interface_number);
-	bool get_convergence_boundary_condition();
+	bool get_neumann_zero_boundary();
 	bool ion_transport_activated();
 
 	bool is_light_on();

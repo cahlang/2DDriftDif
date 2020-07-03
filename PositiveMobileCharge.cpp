@@ -9,8 +9,12 @@
 #include <cmath>
 #include <string>
 #include <boost/property_tree/ptree.hpp>
+#include <Eigen/Sparse>
 
 namespace pt = boost::property_tree;
+using namespace Eigen;
+
+typedef Triplet<double> Trip;
 
 void PositiveMobileCharge::initialize(pt::ptree &settings){
 
@@ -40,6 +44,192 @@ void PositiveMobileCharge::initialize(pt::ptree &settings){
 	std::cout << "Hole concentration initialized." << std::endl;
 
 	return;
+
+}
+
+void PositiveMobileCharge::solve_inverse(Morphology &material, const Potential &potential){
+
+	flag_has_converged = true;
+	std::vector<double> previous = concentration.data;
+
+	int size = (concentration.points_x - 2)*concentration.points_y;
+	SparseMatrix<double> A(size, size);
+	A.reserve(VectorXi::Constant(size, 6));
+	VectorXd b(size), x(size);
+
+	std::vector<Trip> tripletList;
+	tripletList.reserve(20 * size);
+
+	for (int i = 1; i < concentration.points_x - 1; i++){
+		for (int j = 0; j < concentration.points_y; j++){
+
+			int site, site_x_minus, site_x_plus, site_y_minus, site_y_plus;
+
+			site = i * concentration.points_y + j;
+
+			if (concentration.calculate_this[site] == true){
+
+				site_x_minus = site - concentration.points_y;
+				site_x_plus = site + concentration.points_y;
+				if (j != 0)
+					site_y_minus = site - 1;
+				else
+					site_y_minus = site - 1 + concentration.points_y;
+				if (j != concentration.points_y - 1)
+					site_y_plus = site + 1;
+				else
+					site_y_plus = site + 1 - concentration.points_y;
+
+				if (material.is_electrode_interface(site) && !material.surface_recombination_activated(material.get_electrode_material_interface_number(site))){
+					// calculates the value of the concentration at site.
+					int interface_number = material.get_electrode_material_interface_number(site);
+
+					get_boundary_condition(site, interface_number, material, potential.electrical);
+
+				}
+				else{
+
+					if (material.is_electrode_interface(site) && material.surface_recombination_activated(material.get_electrode_material_interface_number(site))){
+						int electrode_material_interface_number = material.get_electrode_material_interface_number(site);
+						if (material.is_electrode(site_x_minus)){
+
+							tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -1.0 / pow(concentration.spacing_x, 2.0) * material.get_hole_mobility(site, site_x_plus) * calc::bernou(potential.electrical.data[site_x_plus] + material.get_hole_trans_energy(site_x_plus) - potential.electrical.data[site] - material.get_hole_trans_energy(site))
+								- material.get_surface_recombination_velocity_hole(electrode_material_interface_number) / concentration.spacing_x));
+
+							tripletList.push_back(Trip(site - concentration.points_y, site_x_plus - concentration.points_y, material.get_hole_mobility(site, site_x_plus) / pow(concentration.spacing_x, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_hole_trans_energy(site) - potential.electrical.data[site_x_plus] - material.get_hole_trans_energy(site_x_plus))));
+
+							if ((material.is_interface(site) && material.is_interface(site_y_minus) && (material.get_lattice_number(site) != material.get_lattice_number(site_y_minus)))){
+								int pair_number = material.get_interface_pair(site, site_y_minus);
+								tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -material.get_interface_hole_transfer_velocity(pair_number) / concentration.spacing_y * std::min(exp(material.get_hole_trans_energy(site) + potential.electrical.data[site] - material.get_hole_trans_energy(site_y_minus) - potential.electrical.data[site_y_minus]), 1.0)));
+								tripletList.push_back(Trip(site - concentration.points_y, site_y_minus - concentration.points_y, material.get_interface_hole_transfer_velocity(pair_number) / concentration.spacing_y * std::min(exp(material.get_hole_trans_energy(site_y_minus) + potential.electrical.data[site_y_minus] - material.get_hole_trans_energy(site) - potential.electrical.data[site]), 1.0)));
+							}
+							else{
+								tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -material.get_hole_mobility(site, site_y_minus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site_y_minus] + material.get_hole_trans_energy(site_y_minus) - potential.electrical.data[site] - material.get_hole_trans_energy(site))));
+								tripletList.push_back(Trip(site - concentration.points_y, site_y_minus - concentration.points_y, material.get_hole_mobility(site, site_y_minus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_hole_trans_energy(site) - potential.electrical.data[site_y_minus] - material.get_hole_trans_energy(site_y_minus))));
+							}
+							if ((material.is_interface(site) && material.is_interface(site_y_plus) && (material.get_lattice_number(site) != material.get_lattice_number(site_y_plus)))){
+								int pair_number = material.get_interface_pair(site, site_y_plus);
+								tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -material.get_interface_hole_transfer_velocity(pair_number) / concentration.spacing_y * std::min(exp(material.get_hole_trans_energy(site) + potential.electrical.data[site] - material.get_hole_trans_energy(site_y_plus) - potential.electrical.data[site_y_plus]), 1.0)));
+								tripletList.push_back(Trip(site - concentration.points_y, site_y_plus - concentration.points_y, material.get_interface_hole_transfer_velocity(pair_number) / concentration.spacing_y * std::min(exp(material.get_hole_trans_energy(site_y_plus) + potential.electrical.data[site_y_plus] - material.get_hole_trans_energy(site) - potential.electrical.data[site]), 1.0)));
+							}
+							else{
+								tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -material.get_hole_mobility(site, site_y_plus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site_y_plus] + material.get_hole_trans_energy(site_y_plus) - potential.electrical.data[site] - material.get_hole_trans_energy(site))));
+								tripletList.push_back(Trip(site - concentration.points_y, site_y_plus - concentration.points_y, material.get_hole_mobility(site, site_y_plus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_hole_trans_energy(site) - potential.electrical.data[site_y_plus] - material.get_hole_trans_energy(site_y_plus))));
+							}
+
+							int electrode_number = material.electrode_material_interface[electrode_material_interface_number].get_electrode_number();
+							double work_function = material.get_work_function(electrode_number);
+
+							b(site - concentration.points_y) = -material.get_surface_recombination_velocity_hole(electrode_material_interface_number) / concentration.spacing_x * material.get_hole_trans_DOS(site) * std::min(exp(work_function - material.get_hole_trans_energy(site)),1.0);
+						}
+						else if (material.is_electrode(site_x_plus)){
+							tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -1.0 / pow(concentration.spacing_x, 2.0) * material.get_hole_mobility(site, site_x_minus) * calc::bernou(potential.electrical.data[site_x_minus] + material.get_hole_trans_energy(site_x_minus) - potential.electrical.data[site] - material.get_hole_trans_energy(site))
+								- material.get_surface_recombination_velocity_hole(electrode_material_interface_number) / concentration.spacing_x));
+							tripletList.push_back(Trip(site - concentration.points_y, site_x_minus - concentration.points_y, material.get_hole_mobility(site, site_x_minus) / pow(concentration.spacing_x, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_hole_trans_energy(site) - potential.electrical.data[site_x_minus] - material.get_hole_trans_energy(site_x_minus))));
+
+							if ((material.is_interface(site) && material.is_interface(site_y_minus) && (material.get_lattice_number(site) != material.get_lattice_number(site_y_minus)))){
+								int pair_number = material.get_interface_pair(site, site_y_minus);
+								tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -material.get_interface_hole_transfer_velocity(pair_number) / concentration.spacing_y * std::min(exp(material.get_hole_trans_energy(site) + potential.electrical.data[site] - material.get_hole_trans_energy(site_y_minus) - potential.electrical.data[site_y_minus]), 1.0)));
+								tripletList.push_back(Trip(site - concentration.points_y, site_y_minus - concentration.points_y, material.get_interface_hole_transfer_velocity(pair_number) / concentration.spacing_y * std::min(exp(material.get_hole_trans_energy(site_y_minus) + potential.electrical.data[site_y_minus] - material.get_hole_trans_energy(site) - potential.electrical.data[site]), 1.0)));
+							}
+							else{
+								tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -material.get_hole_mobility(site, site_y_minus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site_y_minus] + material.get_hole_trans_energy(site_y_minus) - potential.electrical.data[site] - material.get_hole_trans_energy(site))));
+								tripletList.push_back(Trip(site - concentration.points_y, site_y_minus - concentration.points_y, material.get_hole_mobility(site, site_y_minus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_hole_trans_energy(site) - potential.electrical.data[site_y_minus] - material.get_hole_trans_energy(site_y_minus))));
+							}
+							if ((material.is_interface(site) && material.is_interface(site_y_plus) && (material.get_lattice_number(site) != material.get_lattice_number(site_y_plus)))){
+								int pair_number = material.get_interface_pair(site, site_y_plus);
+								tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -material.get_interface_hole_transfer_velocity(pair_number) / concentration.spacing_y * std::min(exp(material.get_hole_trans_energy(site) + potential.electrical.data[site] - material.get_hole_trans_energy(site_y_plus) - potential.electrical.data[site_y_plus]), 1.0)));
+								tripletList.push_back(Trip(site - concentration.points_y, site_y_plus - concentration.points_y, material.get_interface_hole_transfer_velocity(pair_number) / concentration.spacing_y * std::min(exp(material.get_hole_trans_energy(site_y_plus) + potential.electrical.data[site_y_plus] - material.get_hole_trans_energy(site) - potential.electrical.data[site]), 1.0)));
+							}
+							else{
+								tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -material.get_hole_mobility(site, site_y_plus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site_y_plus] + material.get_hole_trans_energy(site_y_plus) - potential.electrical.data[site] - material.get_hole_trans_energy(site))));
+								tripletList.push_back(Trip(site - concentration.points_y, site_y_plus - concentration.points_y, material.get_hole_mobility(site, site_y_plus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_hole_trans_energy(site) - potential.electrical.data[site_y_plus] - material.get_hole_trans_energy(site_y_plus))));
+							}
+
+							int electrode_number = material.electrode_material_interface[electrode_material_interface_number].get_electrode_number();
+							double work_function = material.get_work_function(electrode_number);
+							double electrode_potential = material.get_electrode_potential(electrode_number);
+
+							b(site - concentration.points_y) = -material.get_surface_recombination_velocity_hole(electrode_material_interface_number) / concentration.spacing_x * material.get_hole_trans_DOS(site) * std::min(exp(work_function + electrode_potential - material.get_hole_trans_energy(site) - potential.electrical.data[site]), 1.0);
+
+						}
+					}
+					else{
+
+						if ((material.is_interface(site) && material.is_interface(site_x_minus) && (material.get_lattice_number(site) != material.get_lattice_number(site_x_minus)))){
+							int pair_number = material.get_interface_pair(site, site_x_minus);
+							tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -material.get_interface_hole_transfer_velocity(pair_number) / concentration.spacing_y * std::min(exp(material.get_hole_trans_energy(site) + potential.electrical.data[site] - material.get_hole_trans_energy(site_x_minus) - potential.electrical.data[site_x_minus]), 1.0)));
+							tripletList.push_back(Trip(site - concentration.points_y, site_x_minus - concentration.points_y, material.get_interface_hole_transfer_velocity(pair_number) / concentration.spacing_y * std::min(exp(material.get_hole_trans_energy(site_x_minus) + potential.electrical.data[site_x_minus] - material.get_hole_trans_energy(site) - potential.electrical.data[site]), 1.0)));
+						}
+						else{
+							tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -material.get_hole_mobility(site, site_x_minus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site_x_minus] + material.get_hole_trans_energy(site_x_minus) - potential.electrical.data[site] - material.get_hole_trans_energy(site))));
+							tripletList.push_back(Trip(site - concentration.points_y, site_x_minus - concentration.points_y, material.get_hole_mobility(site, site_x_minus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_hole_trans_energy(site) - potential.electrical.data[site_x_minus] - material.get_hole_trans_energy(site_x_minus))));
+						}
+
+						if ((material.is_interface(site) && material.is_interface(site_x_plus) && (material.get_lattice_number(site) != material.get_lattice_number(site_x_plus)))){
+							int pair_number = material.get_interface_pair(site, site_x_plus);
+							tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -material.get_interface_hole_transfer_velocity(pair_number) / concentration.spacing_y * std::min(exp(material.get_hole_trans_energy(site) + potential.electrical.data[site] - material.get_hole_trans_energy(site_x_plus) - potential.electrical.data[site_x_plus]), 1.0)));
+							tripletList.push_back(Trip(site - concentration.points_y, site_x_plus - concentration.points_y, material.get_interface_hole_transfer_velocity(pair_number) / concentration.spacing_y * std::min(exp(material.get_hole_trans_energy(site_x_plus) + potential.electrical.data[site_x_plus] - material.get_hole_trans_energy(site) - potential.electrical.data[site]), 1.0)));
+						}
+						else{
+							tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -material.get_hole_mobility(site, site_x_plus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site_x_plus] + material.get_hole_trans_energy(site_x_plus) - potential.electrical.data[site] - material.get_hole_trans_energy(site))));
+							tripletList.push_back(Trip(site - concentration.points_y, site_x_plus - concentration.points_y, material.get_hole_mobility(site, site_x_plus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_hole_trans_energy(site) - potential.electrical.data[site_x_plus] - material.get_hole_trans_energy(site_x_plus))));
+						}
+						if ((material.is_interface(site) && material.is_interface(site_y_minus) && (material.get_lattice_number(site) != material.get_lattice_number(site_y_minus)))){
+							int pair_number = material.get_interface_pair(site, site_y_minus);
+							tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -material.get_interface_hole_transfer_velocity(pair_number) / concentration.spacing_y * std::min(exp(material.get_hole_trans_energy(site) + potential.electrical.data[site] - material.get_hole_trans_energy(site_y_minus) - potential.electrical.data[site_y_minus]), 1.0)));
+							tripletList.push_back(Trip(site - concentration.points_y, site_y_minus - concentration.points_y, material.get_interface_hole_transfer_velocity(pair_number) / concentration.spacing_y * std::min(exp(material.get_hole_trans_energy(site_y_minus) + potential.electrical.data[site_y_minus] - material.get_hole_trans_energy(site) - potential.electrical.data[site]), 1.0)));
+						}
+						else{
+							tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -material.get_hole_mobility(site, site_y_minus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site_y_minus] + material.get_hole_trans_energy(site_y_minus) - potential.electrical.data[site] - material.get_hole_trans_energy(site))));
+							tripletList.push_back(Trip(site - concentration.points_y, site_y_minus - concentration.points_y, material.get_hole_mobility(site, site_y_minus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_hole_trans_energy(site) - potential.electrical.data[site_y_minus] - material.get_hole_trans_energy(site_y_minus))));
+						}
+						if ((material.is_interface(site) && material.is_interface(site_y_plus) && (material.get_lattice_number(site) != material.get_lattice_number(site_y_plus)))){
+							int pair_number = material.get_interface_pair(site, site_y_plus);
+							tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -material.get_interface_hole_transfer_velocity(pair_number) / concentration.spacing_y * std::min(exp(material.get_hole_trans_energy(site) + potential.electrical.data[site] - material.get_hole_trans_energy(site_y_plus) - potential.electrical.data[site_y_plus]), 1.0)));
+							tripletList.push_back(Trip(site - concentration.points_y, site_y_plus - concentration.points_y, material.get_interface_hole_transfer_velocity(pair_number) / concentration.spacing_y * std::min(exp(material.get_hole_trans_energy(site_y_plus) + potential.electrical.data[site_y_plus] - material.get_hole_trans_energy(site) - potential.electrical.data[site]), 1.0)));
+						}
+						else{
+							tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -material.get_hole_mobility(site, site_y_plus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site_y_plus] + material.get_hole_trans_energy(site_y_plus) - potential.electrical.data[site] - material.get_hole_trans_energy(site))));
+							tripletList.push_back(Trip(site - concentration.points_y, site_y_plus - concentration.points_y, material.get_hole_mobility(site, site_y_plus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_hole_trans_energy(site) - potential.electrical.data[site_y_plus] - material.get_hole_trans_energy(site_y_plus))));
+						}
+						tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, rate_coef.data[site]));
+						b(site - concentration.points_y) = -rate.data[site];
+					}
+
+
+
+				}
+
+			}
+		}
+	}
+
+	A.setFromTriplets(tripletList.begin(), tripletList.end());
+
+	SparseLU<SparseMatrix<double>>   solver;
+	A.makeCompressed();
+
+	solver.compute(A);
+
+	if (solver.info() != Success) {
+		std::cerr << "Holecon decomposition failed" << std::endl;
+		return;
+	}
+
+	x = solver.solve(b);
+
+	for (int site = 0; site < size; site++){
+		if (concentration.calculate_this[site + concentration.points_y] == true)
+		concentration.data[site + concentration.points_y] = x(site);
+		if (fabs(concentration.data[site + concentration.points_y] - previous[site + concentration.points_y]) >= c_convergence[iteration_stage] * concentration.data[site + concentration.points_y]){
+			flag_has_converged = false;
+		}
+	}
+
+
+	return;
+
 
 }
 
@@ -76,7 +266,8 @@ void PositiveMobileCharge::solve(Morphology &material, const Potential &potentia
 	}
 	change_sweep_direction();
 
-	if (material.get_convergence_boundary_condition()){
+
+	if (material.get_neumann_zero_boundary()){
 		for (int site = 0; site < material.cbc_interface.size(); site++){
 			concentration.data[material.cbc_interface[site][0]] = concentration.data[material.cbc_interface[site][1]];
 		}
@@ -116,7 +307,7 @@ void PositiveMobileCharge::solve(Morphology &material, const Potential &potentia
 	}
 	change_sweep_direction();
 
-	if (material.get_convergence_boundary_condition()){
+	if (material.get_neumann_zero_boundary()){
 		for (int site = 0; site < material.cbc_interface.size(); site++){
 			concentration.data[material.cbc_interface[site][0]] = concentration.data[material.cbc_interface[site][1]];
 		}
@@ -168,11 +359,35 @@ void PositiveMobileCharge::solve_one_d(Morphology &material, const Potential &po
 			}
 		}
 		else{
+			d[i] = -rate.data[site];
+			b[i] = rate_coef.data[site];
+			if (material.is_interface(site) && material.is_interface(site_x_minus)){
+				int pair_number = material.get_interface_pair(site, site_x_minus);
+				b[i] += -material.get_interface_hole_transfer_velocity(pair_number) / concentration.spacing_x * std::min(exp(material.get_hole_trans_energy(site) + potential.electrical.data[site] - material.get_hole_trans_energy(site_x_minus) - potential.electrical.data[site_x_minus]), 1.0);
+				a[i] = material.get_interface_hole_transfer_velocity(pair_number) / concentration.spacing_x * std::min(exp(material.get_hole_trans_energy(site_x_minus) + potential.electrical.data[site_x_minus] - material.get_hole_trans_energy(site) - potential.electrical.data[site]), 1.0);
+			}
+			else{
+				b[i] += -1.0 / pow(concentration.spacing_x, 2.0) * material.get_hole_mobility(site, site_x_minus) * calc::bernou(potential.electrical.data[site_x_minus] + material.get_hole_trans_energy(site_x_minus) - potential.electrical.data[site] - material.get_hole_trans_energy(site));
+				a[i] = material.get_hole_mobility(site, site_x_minus) / pow(concentration.spacing_x, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_hole_trans_energy(site) - potential.electrical.data[site_x_minus] - material.get_hole_trans_energy(site_x_minus));
+			}
+			if (material.is_interface(site) && material.is_interface(site_x_plus)){
+				int pair_number = material.get_interface_pair(site, site_x_plus);
+				b[i] += -material.get_interface_hole_transfer_velocity(pair_number) / concentration.spacing_x * std::min(exp(material.get_hole_trans_energy(site) + potential.electrical.data[site] - material.get_hole_trans_energy(site_x_plus) - potential.electrical.data[site_x_plus]), 1.0);
+				c[i] = material.get_interface_hole_transfer_velocity(pair_number) / concentration.spacing_x * std::min(exp(material.get_hole_trans_energy(site_x_plus) + potential.electrical.data[site_x_plus] - material.get_hole_trans_energy(site) - potential.electrical.data[site]), 1.0);
+			}
+			else{
+				b[i] += -1.0 / pow(concentration.spacing_x, 2.0) * material.get_hole_mobility(site, site_x_plus) * calc::bernou(potential.electrical.data[site_x_plus] + material.get_hole_trans_energy(site_x_plus) - potential.electrical.data[site] - material.get_hole_trans_energy(site));
+				c[i] = material.get_hole_mobility(site, site_x_plus) / pow(concentration.spacing_x, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_hole_trans_energy(site) - potential.electrical.data[site_x_plus] - material.get_hole_trans_energy(site_x_plus));
+			}
+
+
+			/*
 			a[i] = material.get_hole_mobility(site, site_x_minus) / pow(concentration.spacing_x, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_hole_trans_energy(site) - potential.electrical.data[site_x_minus] - material.get_hole_trans_energy(site_x_minus));
 			b[i] = -1.0 / pow(concentration.spacing_x, 2.0) * (material.get_hole_mobility(site, site_x_minus) * calc::bernou(potential.electrical.data[site_x_minus] + material.get_hole_trans_energy(site_x_minus) - potential.electrical.data[site] - material.get_hole_trans_energy(site))
 				+ material.get_hole_mobility(site, site_x_plus) * calc::bernou(potential.electrical.data[site_x_plus] + material.get_hole_trans_energy(site_x_plus) - potential.electrical.data[site] - material.get_hole_trans_energy(site))) + rate_coef.data[site];
 			c[i] = material.get_hole_mobility(site, site_x_plus) / pow(concentration.spacing_x, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_hole_trans_energy(site) - potential.electrical.data[site_x_plus] - material.get_hole_trans_energy(site_x_plus));
-			d[i] = -rate.data[site];
+
+			*/	
 		}
 
 	}
@@ -216,6 +431,12 @@ void PositiveMobileCharge::solve_one_d(Morphology &material, const Potential &po
 			concentration.data[i] = d_prime[n];
 		else
 			concentration.data[i] = d_prime[n] - c_prime[n] * concentration.data[i + 1];
+
+		if (concentration.data[i] > material.get_hole_trans_DOS(i))
+			concentration.data[i] = material.get_hole_trans_DOS(i);
+
+		if (concentration.data[i] < 0.0)
+			concentration.data[i] = 0.0;
 	}
 
 	return;
@@ -265,11 +486,36 @@ void PositiveMobileCharge::solve_one_d(Morphology &material, const Potential &po
 			}
 		}
 		else{
+
+			d[i] = -rate.data[site] - previous_time_concentration.data[site] / time_step;
+			b[i] = rate_coef.data[site] - 1.0 / time_step;
+			if (material.is_interface(site) && material.is_interface(site_x_minus)){
+				int pair_number = material.get_interface_pair(site, site_x_minus);
+				b[i] += -material.get_interface_hole_transfer_velocity(pair_number) / concentration.spacing_x * std::min(exp(material.get_hole_trans_energy(site) + potential.electrical.data[site] - material.get_hole_trans_energy(site_x_minus) - potential.electrical.data[site_x_minus]), 1.0);
+				a[i] = material.get_interface_hole_transfer_velocity(pair_number) / concentration.spacing_x * std::min(exp(material.get_hole_trans_energy(site_x_minus) + potential.electrical.data[site_x_minus] - material.get_hole_trans_energy(site) - potential.electrical.data[site]), 1.0);
+			}
+			else{
+				b[i] += -1.0 / pow(concentration.spacing_x, 2.0) * material.get_hole_mobility(site, site_x_minus) * calc::bernou(potential.electrical.data[site_x_minus] + material.get_hole_trans_energy(site_x_minus) - potential.electrical.data[site] - material.get_hole_trans_energy(site));
+				a[i] = material.get_hole_mobility(site, site_x_minus) / pow(concentration.spacing_x, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_hole_trans_energy(site) - potential.electrical.data[site_x_minus] - material.get_hole_trans_energy(site_x_minus));
+			}
+			if (material.is_interface(site) && material.is_interface(site_x_plus)){
+				int pair_number = material.get_interface_pair(site, site_x_plus);
+				b[i] += -material.get_interface_hole_transfer_velocity(pair_number) / concentration.spacing_x * std::min(exp(material.get_hole_trans_energy(site) + potential.electrical.data[site] - material.get_hole_trans_energy(site_x_plus) - potential.electrical.data[site_x_plus]), 1.0);
+				c[i] = material.get_interface_hole_transfer_velocity(pair_number) / concentration.spacing_x * std::min(exp(material.get_hole_trans_energy(site_x_plus) + potential.electrical.data[site_x_plus] - material.get_hole_trans_energy(site) - potential.electrical.data[site]), 1.0);
+			}
+			else{
+				b[i] += -1.0 / pow(concentration.spacing_x, 2.0) * material.get_hole_mobility(site, site_x_plus) * calc::bernou(potential.electrical.data[site_x_plus] + material.get_hole_trans_energy(site_x_plus) - potential.electrical.data[site] - material.get_hole_trans_energy(site));
+				c[i] = material.get_hole_mobility(site, site_x_plus) / pow(concentration.spacing_x, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_hole_trans_energy(site) - potential.electrical.data[site_x_plus] - material.get_hole_trans_energy(site_x_plus));
+			}
+
+
+			/*
 			a[i] = material.get_hole_mobility(site, site_x_minus) / pow(concentration.spacing_x, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_hole_trans_energy(site) - potential.electrical.data[site_x_minus] - material.get_hole_trans_energy(site_x_minus));
 			b[i] = -1.0 / pow(concentration.spacing_x, 2.0) * (material.get_hole_mobility(site, site_x_minus) * calc::bernou(potential.electrical.data[site_x_minus] + material.get_hole_trans_energy(site_x_minus) - potential.electrical.data[site] - material.get_hole_trans_energy(site))
 				+ material.get_hole_mobility(site, site_x_plus) * calc::bernou(potential.electrical.data[site_x_plus] + material.get_hole_trans_energy(site_x_plus) - potential.electrical.data[site] - material.get_hole_trans_energy(site))) + rate_coef.data[site] - 1.0 / time_step;
 			c[i] = material.get_hole_mobility(site, site_x_plus) / pow(concentration.spacing_x, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_hole_trans_energy(site) - potential.electrical.data[site_x_plus] - material.get_hole_trans_energy(site_x_plus));
 			d[i] = -rate.data[site] - previous_time_concentration.data[site] / time_step;
+			*/
 		}
 
 
@@ -314,6 +560,13 @@ void PositiveMobileCharge::solve_one_d(Morphology &material, const Potential &po
 			concentration.data[i] = d_prime[n];
 		else
 			concentration.data[i] = d_prime[n] - c_prime[n] * concentration.data[i + 1];
+
+		if (concentration.data[i] > material.get_hole_trans_DOS(i))
+			concentration.data[i] = material.get_hole_trans_DOS(i);
+
+		if (concentration.data[i] < 0.0)
+			concentration.data[i] = 0.0;
+
 	}
 
 	return;
@@ -333,18 +586,58 @@ void PositiveMobileCharge::calculate_concentration(int i, int j, Morphology &mat
 
 	double previous = concentration.data[site];
 
-	if (material.is_electrode_interface(site)){
-		get_boundary_condition(site, material.get_electrode_material_interface_number(site), material, potential.electrical);
+	if (material.is_electrode_interface(site) && !material.surface_recombination_activated(material.get_electrode_material_interface_number(site))){
+		int interface_number = material.get_electrode_material_interface_number(site);
+		get_boundary_condition(site, interface_number, material, potential.electrical);
 	}
 	else{
 
-		a[0] = -1.0 / pow(concentration.spacing_x, 2.0) * (material.get_hole_mobility(site, site_x_minus) * calc::bernou(potential.electrical.data[site_x_minus] + material.get_hole_trans_energy(site_x_minus) - potential.electrical.data[site] - material.get_hole_trans_energy(site))
-			+ material.get_hole_mobility(site, site_x_plus) * calc::bernou(potential.electrical.data[site_x_plus] + material.get_hole_trans_energy(site_x_plus) - potential.electrical.data[site] - material.get_hole_trans_energy(site))) + rate_coef.data[site];
+		if (material.is_electrode_interface(site) && material.surface_recombination_activated(material.get_electrode_material_interface_number(site))){
+			int electrode_material_interface_number = material.get_electrode_material_interface_number(site);
+			if (material.is_electrode(site_x_minus)){
+				a[0] = -1.0 / pow(concentration.spacing_x, 2.0) * (material.get_hole_mobility(site, site_x_plus) * calc::bernou(potential.electrical.data[site_x_plus] + material.get_hole_trans_energy(site_x_plus) - potential.electrical.data[site] - material.get_hole_trans_energy(site))) + rate_coef.data[site]
+					- material.get_surface_recombination_velocity_hole(electrode_material_interface_number) / concentration.spacing_x;
+				a[2] = material.get_hole_mobility(site, site_x_plus) / pow(concentration.spacing_x, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_hole_trans_energy(site) - potential.electrical.data[site_x_plus] - material.get_hole_trans_energy(site_x_plus)) * concentration.data[site_x_plus];
 
-		a[1] = material.get_hole_mobility(site, site_x_minus) / pow(concentration.spacing_x, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_hole_trans_energy(site) - potential.electrical.data[site_x_minus] - material.get_hole_trans_energy(site_x_minus)) * concentration.data[site_x_minus];
+				int electrode_number = material.electrode_material_interface[electrode_material_interface_number].get_electrode_number();
+				double work_function = material.get_work_function(electrode_number);
 
-		a[2] = material.get_hole_mobility(site, site_x_plus) / pow(concentration.spacing_x, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_hole_trans_energy(site) - potential.electrical.data[site_x_plus] - material.get_hole_trans_energy(site_x_plus)) * concentration.data[site_x_plus];
+				b = -material.get_surface_recombination_velocity_hole(electrode_material_interface_number) / concentration.spacing_x * material.get_hole_trans_DOS(site) * std::min(exp(work_function - material.get_hole_trans_energy(site)), 1.0);
+			}
+			else if (material.is_electrode(site_x_plus)){
+				a[0] = -1.0 / pow(concentration.spacing_x, 2.0) * (material.get_hole_mobility(site, site_x_minus) * calc::bernou(potential.electrical.data[site_x_minus] + material.get_hole_trans_energy(site_x_minus) - potential.electrical.data[site] - material.get_hole_trans_energy(site))) + rate_coef.data[site]
+					- material.get_surface_recombination_velocity_hole(electrode_material_interface_number) / concentration.spacing_x;
+				a[1] = material.get_hole_mobility(site, site_x_minus) / pow(concentration.spacing_x, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_hole_trans_energy(site) - potential.electrical.data[site_x_minus] - material.get_hole_trans_energy(site_x_minus)) * concentration.data[site_x_minus];
 
+				int electrode_number = material.electrode_material_interface[electrode_material_interface_number].get_electrode_number();
+				double work_function = material.get_work_function(electrode_number);
+
+				b = -material.get_surface_recombination_velocity_hole(electrode_material_interface_number) / concentration.spacing_x * material.get_hole_trans_DOS(site) * std::min(exp(work_function - material.get_hole_trans_energy(site)), 1.0);
+			}
+		}
+		else{
+
+			if ((material.is_interface(site) && material.is_interface(site_x_minus)) && (material.get_lattice_number(site) != material.get_lattice_number(site_x_minus))){
+				int pair_number = material.get_interface_pair(site, site_x_minus);
+				a[0] += -material.get_interface_hole_transfer_velocity(pair_number) / concentration.spacing_x * std::min(exp(material.get_hole_trans_energy(site) + potential.electrical.data[site] - material.get_hole_trans_energy(site_x_minus) - potential.electrical.data[site_x_minus]), 1.0);
+				a[1] += material.get_interface_hole_transfer_velocity(pair_number) / concentration.spacing_x * std::min(exp(material.get_hole_trans_energy(site_x_minus) + potential.electrical.data[site_x_minus] - material.get_hole_trans_energy(site) - potential.electrical.data[site]), 1.0) * concentration.data[site_x_minus];
+			}
+			else{
+				a[0] += -material.get_hole_mobility(site, site_x_minus) / pow(concentration.spacing_x, 2.0) * calc::bernou(potential.electrical.data[site_x_minus] + material.get_hole_trans_energy(site_x_minus) - potential.electrical.data[site] - material.get_hole_trans_energy(site));
+				a[1] += material.get_hole_mobility(site, site_x_minus) / pow(concentration.spacing_x, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_hole_trans_energy(site) - potential.electrical.data[site_x_minus] - material.get_hole_trans_energy(site_x_minus)) * concentration.data[site_x_minus];
+			}
+			if ((material.is_interface(site) && material.is_interface(site_x_plus)) && (material.get_lattice_number(site) != material.get_lattice_number(site_x_plus))){
+				int pair_number = material.get_interface_pair(site, site_x_plus);
+				a[0] += -material.get_interface_hole_transfer_velocity(pair_number) / concentration.spacing_x * std::min(exp(material.get_hole_trans_energy(site) + potential.electrical.data[site] - material.get_hole_trans_energy(site_x_plus) - potential.electrical.data[site_x_plus]), 1.0);
+				a[2] += material.get_interface_hole_transfer_velocity(pair_number) / concentration.spacing_x * std::min(exp(material.get_hole_trans_energy(site_x_plus) + potential.electrical.data[site_x_plus] - material.get_hole_trans_energy(site) - potential.electrical.data[site]), 1.0) * concentration.data[site_x_plus];
+			}
+			else{
+				a[0] += -material.get_hole_mobility(site, site_x_plus) / pow(concentration.spacing_x, 2.0) * calc::bernou(potential.electrical.data[site_x_plus] + material.get_hole_trans_energy(site_x_plus) - potential.electrical.data[site] - material.get_hole_trans_energy(site));
+				a[2] += material.get_hole_mobility(site, site_x_plus) / pow(concentration.spacing_x, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_hole_trans_energy(site) - potential.electrical.data[site_x_plus] - material.get_hole_trans_energy(site_x_plus)) * concentration.data[site_x_plus];
+			}
+
+			a[0] += rate_coef.data[site];
+		}
 		if (concentration.points_y > 1){
 
 			int site_y_minus, site_y_plus;
@@ -359,17 +652,29 @@ void PositiveMobileCharge::calculate_concentration(int i, int j, Morphology &mat
 			else
 				site_y_plus = site + 1 - concentration.points_y;
 
+			if ((material.is_interface(site) && material.is_interface(site_y_minus)) && (material.get_lattice_number(site) != material.get_lattice_number(site_y_minus))){
+				int pair_number = material.get_interface_pair(site, site_y_minus);
+				a[0] += -material.get_interface_hole_transfer_velocity(pair_number) / concentration.spacing_y * std::min(exp(material.get_hole_trans_energy(site) + potential.electrical.data[site] - material.get_hole_trans_energy(site_y_minus) - potential.electrical.data[site_y_minus]), 1.0);
+				a[3] += material.get_interface_hole_transfer_velocity(pair_number) / concentration.spacing_y * std::min(exp(material.get_hole_trans_energy(site_y_minus) + potential.electrical.data[site_y_minus] - material.get_hole_trans_energy(site) - potential.electrical.data[site]), 1.0) * concentration.data[site_y_minus];
+			}
+			else{
+				a[0] += -material.get_hole_mobility(site, site_y_minus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site_y_minus] + material.get_hole_trans_energy(site_y_minus) - potential.electrical.data[site] - material.get_hole_trans_energy(site));
+				a[3] += material.get_hole_mobility(site, site_y_minus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_hole_trans_energy(site) - potential.electrical.data[site_y_minus] - material.get_hole_trans_energy(site_y_minus)) * concentration.data[site_y_minus];
+			}
 
-			a[0] -= 1.0 / pow(concentration.spacing_y, 2.0) * (material.get_hole_mobility(site, site_y_minus) * calc::bernou(potential.electrical.data[site_y_minus] + material.get_hole_trans_energy(site_y_minus) - potential.electrical.data[site] - material.get_hole_trans_energy(site))
-				+ material.get_hole_mobility(site, site_y_plus) * calc::bernou(potential.electrical.data[site_y_plus] + material.get_hole_trans_energy(site_y_plus) - potential.electrical.data[site] - material.get_hole_trans_energy(site)));
-
-			a[3] = material.get_hole_mobility(site, site_y_minus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_hole_trans_energy(site) - potential.electrical.data[site_y_minus] - material.get_hole_trans_energy(site_y_minus)) * concentration.data[site_y_minus];
-
-			a[4] = material.get_hole_mobility(site, site_y_plus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_hole_trans_energy(site) - potential.electrical.data[site_y_plus] - material.get_hole_trans_energy(site_y_plus)) * concentration.data[site_y_plus];
+			if ((material.is_interface(site) && material.is_interface(site_y_plus)) && (material.get_lattice_number(site) != material.get_lattice_number(site_y_plus))){
+				int pair_number = material.get_interface_pair(site, site_y_plus);
+				a[0] += -material.get_interface_hole_transfer_velocity(pair_number) / concentration.spacing_y * std::min(exp(material.get_hole_trans_energy(site) + potential.electrical.data[site] - material.get_hole_trans_energy(site_y_plus) - potential.electrical.data[site_y_plus]), 1.0);
+				a[4] += material.get_interface_hole_transfer_velocity(pair_number) / concentration.spacing_y * std::min(exp(material.get_hole_trans_energy(site_y_plus) + potential.electrical.data[site_y_plus] - material.get_hole_trans_energy(site) - potential.electrical.data[site]), 1.0) * concentration.data[site_y_plus];
+			}
+			else{
+				a[0] += -material.get_hole_mobility(site, site_y_plus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site_y_plus] + material.get_hole_trans_energy(site_y_plus) - potential.electrical.data[site] - material.get_hole_trans_energy(site));
+				a[4] += material.get_hole_mobility(site, site_y_plus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_hole_trans_energy(site) - potential.electrical.data[site_y_plus] - material.get_hole_trans_energy(site_y_plus)) * concentration.data[site_y_plus];
+			}
 
 		}
 
-		b = -rate.data[site];
+		b += -rate.data[site];
 
 
 
@@ -473,8 +778,15 @@ void PositiveMobileCharge::calculate_current(Morphology &material, const Potenti
 
 			if (i < concentration.points_x - 1 && !material.is_electrode(site) && !material.is_electrode(site_x_plus)){
 
-				current_x.data[site] = -material.get_hole_mobility(site, site_x_plus) / current_x.spacing_x * (calc::bernou(potential.electrical.data[site] + material.get_hole_trans_energy(site) - potential.electrical.data[site_x_plus] - material.get_hole_trans_energy(site_x_plus)) * concentration.data[site_x_plus]
-					- calc::bernou(potential.electrical.data[site_x_plus] + material.get_hole_trans_energy(site_x_plus) - potential.electrical.data[site] - material.get_hole_trans_energy(site)) * concentration.data[site]);
+				if ((material.is_interface(site) && material.is_interface(site_x_plus)) && (material.get_lattice_number(site) != material.get_lattice_number(site_x_plus))){
+					int pair_number = material.get_interface_pair(site, site_x_plus);
+					current_x.data[site] = material.get_interface_hole_transfer_velocity(pair_number) * (concentration.data[site] * std::min(exp(material.get_hole_trans_energy(site) + potential.electrical.data[site] - material.get_hole_trans_energy(site_x_plus) - potential.electrical.data[site_x_plus]), 1.0)
+						- concentration.data[site_x_plus] * std::min(exp(material.get_hole_trans_energy(site_x_plus) + potential.electrical.data[site_x_plus] - material.get_hole_trans_energy(site) - potential.electrical.data[site]), 1.0));
+				}
+				else{
+					current_x.data[site] = -material.get_hole_mobility(site, site_x_plus) / current_x.spacing_x * (calc::bernou(potential.electrical.data[site] + material.get_hole_trans_energy(site) - potential.electrical.data[site_x_plus] - material.get_hole_trans_energy(site_x_plus)) * concentration.data[site_x_plus]
+						- calc::bernou(potential.electrical.data[site_x_plus] + material.get_hole_trans_energy(site_x_plus) - potential.electrical.data[site] - material.get_hole_trans_energy(site)) * concentration.data[site]);
+				}
 			}
 			if (current_y.points_y > 1){
 				int site_y_plus;
@@ -483,11 +795,21 @@ void PositiveMobileCharge::calculate_current(Morphology &material, const Potenti
 					site_y_plus = site + 1;
 				else
 					site_y_plus = site + 1 - concentration.points_y;
-				if (concentration.calculate_this[site] && concentration.calculate_this[site_y_plus]){
-					current_y.data[site] = -material.get_hole_mobility(site, site_y_plus) / current_y.spacing_y * (calc::bernou(potential.electrical.data[site] + material.get_hole_trans_energy(site) - potential.electrical.data[site_y_plus] - material.get_hole_trans_energy(site_y_plus)) * concentration.data[site_y_plus]
-						- calc::bernou(potential.electrical.data[site_y_plus] + material.get_hole_trans_energy(site_y_plus) - potential.electrical.data[site] - material.get_hole_trans_energy(site)) * concentration.data[site]);
+
+				if (!material.is_electrode(site) && !material.is_electrode(site_y_plus)){
+
+					if ((material.is_interface(site) && material.is_interface(site_y_plus)) && (material.get_lattice_number(site) != material.get_lattice_number(site_y_plus))){
+						int pair_number = material.get_interface_pair(site, site_y_plus);
+						current_y.data[site] = material.get_interface_hole_transfer_velocity(pair_number) * (concentration.data[site] * std::min(exp(material.get_hole_trans_energy(site) + potential.electrical.data[site] - material.get_hole_trans_energy(site_y_plus) - potential.electrical.data[site_y_plus]), 1.0)
+							- concentration.data[site_y_plus] * std::min(exp(material.get_hole_trans_energy(site_y_plus) + potential.electrical.data[site_y_plus] - material.get_hole_trans_energy(site) - potential.electrical.data[site]), 1.0));
+					}
+					else{
+						current_y.data[site] = -material.get_hole_mobility(site, site_y_plus) / current_y.spacing_y * (calc::bernou(potential.electrical.data[site] + material.get_hole_trans_energy(site) - potential.electrical.data[site_y_plus] - material.get_hole_trans_energy(site_y_plus)) * concentration.data[site_y_plus]
+							- calc::bernou(potential.electrical.data[site_y_plus] + material.get_hole_trans_energy(site_y_plus) - potential.electrical.data[site] - material.get_hole_trans_energy(site)) * concentration.data[site]);
+					}
 				}
 			}
+
 		}
 
 	}
@@ -504,7 +826,7 @@ void PositiveMobileCharge::set_boundary_conditions(Morphology &device_properties
 		}
 	}
 
-	if (device_properties.get_convergence_boundary_condition()){
+	if (device_properties.get_neumann_zero_boundary()){
 		for (int site = 0; site < concentration.points_x*concentration.points_y; site++){
 			if (device_properties.is_cbc(site)){
 				concentration.data[site] = 0.0;
@@ -564,11 +886,15 @@ void PositiveMobileCharge::set_initial_guess(Morphology &device_properties, cons
 			for (int j = 0; j < concentration.points_y; j++){
 				int site = i*concentration.points_y + j;
 				if (concentration.calculate_this[site] == true){
-					double N_an = device_properties.get_hole_trans_DOS(site) * exp(device_properties.get_work_function(0) - device_properties.get_hole_trans_energy(site));
-					double N_cat = device_properties.get_hole_trans_DOS(site) * exp(device_properties.get_work_function(1) - device_properties.get_hole_trans_energy(site));
+					if (device_properties.dopants.data[site] <= -1E23 / concentration.normalization_coef){
+						concentration.data[site] = device_properties.dopants.data[site];
+					}
+					else{
+						double N_an = device_properties.get_hole_trans_DOS(site) * exp(device_properties.get_work_function(0) - device_properties.get_hole_trans_energy(site));
+						double N_cat = device_properties.get_hole_trans_DOS(site) * exp(device_properties.get_work_function(1) - device_properties.get_hole_trans_energy(site));
 
-					concentration.data[site] = N_an * pow((N_cat / N_an), ((double)i) / ((double)concentration.points_x - 1.0));
-
+						concentration.data[site] = N_an * pow((N_cat / N_an), ((double)i) / ((double)concentration.points_x - 1.0));
+					}
 				}
 			}
 		}
@@ -596,7 +922,7 @@ void PositiveMobileCharge::set_initial_guess(Morphology &device_properties, cons
 		std::cerr << "The chosen initial guess number could not be found" << std::endl;
 	}
 
-	if (device_properties.get_convergence_boundary_condition()){
+	if (device_properties.get_neumann_zero_boundary()){
 		for (int site = 0; site < device_properties.cbc_interface.size(); site++){
 			concentration.data[device_properties.cbc_interface[site][0]] = concentration.data[device_properties.cbc_interface[site][1]];
 			concentration.calculate_this[device_properties.cbc_interface[site][0]] = false;
@@ -641,7 +967,7 @@ void PositiveMobileCharge::ion_solve(Morphology &material, const Potential &pote
 	}
 	change_sweep_direction();
 
-	if (material.get_convergence_boundary_condition()){
+	if (material.get_neumann_zero_boundary()){
 		for (int site = 0; site < material.cbc_interface.size(); site++){
 			concentration.data[material.cbc_interface[site][0]] = concentration.data[material.cbc_interface[site][1]];
 		}

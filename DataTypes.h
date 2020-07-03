@@ -89,9 +89,10 @@ struct Material{
 	double max_ion_concentration;
 
 	double generation_rate_initial;
-	double mobility_electron_initial;
-	double mobility_hole_initial;
+	double mobility_electron_zero;
+	double mobility_hole_zero;
 
+	double field_dependent_mobility_coef;
 
 };
 
@@ -107,11 +108,23 @@ struct MaterialInterface : Material {
 	double interface_hole_capture_coef;
 	double interface_electron_capture_coef;
 
+	double interface_hole_trap_energy;
+	double interface_electron_trap_energy;
+	double interface_hole_trap_DOS;
+	double interface_electron_trap_DOS;
+
+	int hole_trap_material_number;
+	int electron_trap_material_number;
+
 	double interface_trap_reduced_recombination_coef;
-	double interface_trap_hole_capture_coef;
-	double interface_trap_electron_capture_coef;
+	double interface_hole_trap_hole_capture_coef;
+	double interface_hole_trap_electron_capture_coef;
+	double interface_electron_trap_hole_capture_coef;
+	double interface_electron_trap_electron_capture_coef;
 
 	double interface_bimolecular_recombination_coef_1, interface_bimolecular_recombination_coef_2;
+
+	double interface_electron_transfer_velocity, interface_hole_transfer_velocity;
 
 };
 
@@ -167,7 +180,7 @@ struct ElectrodeMaterialInterface : MaterialInterface {
 // Stores parameters related to the selected measurement.
 struct Experiment{
 
-	bool experiment_iv, electrostatics, experiment_CELIV, experiment_transient_photocurrent;
+	bool experiment_iv, electrostatics, experiment_CELIV, experiment_PhotoCELIV, experiment_transient_photocurrent;
 	bool output_time, output_potential, output_current;
 
 	int data_points;
@@ -191,7 +204,7 @@ struct Experiment{
 	void next_data_point();
 
 	double voltage_rise_speed, voltage_offset, pulse_length;
-
+	double light_delay;
 	bool output_full_data;
 
 };
