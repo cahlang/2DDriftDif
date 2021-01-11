@@ -82,7 +82,7 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <ClCompile>
-      <AdditionalIncludeDirectories>$(MSMPI_INC);$(MSMPI_INC)\x64;C:\Program Files\boost_1_62_0;C:\Program Files\Eigen\eigen-eigen-323c052e1731;C:\Program Files\boost_1_66_0;C:\Program Files\Eigen\eigen-3.3.9</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(MSMPI_INC);$(MSMPI_INC)\x64;C:\Program Files\boost_1_62_0;C:\Program Files\Eigen\eigen-3.3.9;C:\Program Files\Eigen\eigen-eigen-323c052e1731</AdditionalIncludeDirectories>
       <BrowseInformation>true</BrowseInformation>
     </ClCompile>
     <Link>
