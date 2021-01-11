@@ -53,6 +53,7 @@ public:
 	void solve_inverse(Morphology &material, const Potential &potential);
 	void solve_one_d(Morphology &material, const Potential &potential);
 	void solve(Morphology &material, const Potential &potential, const PositionDependentParameter &previous_time_concentraiton, double time_step);
+	void solve_inverse(Morphology& material, const Potential& potential, const PositionDependentParameter& previous_time_concentraiton, double time_step);
 	void solve_one_d(Morphology &material, const Potential &potential, const PositionDependentParameter &previous_time_concentration, double time_step);
 	// Substeps of solve.
 	void calculate_concentration(int i, int j, Morphology &material, const Potential &potential);

@@ -499,11 +499,22 @@ void Morphology::calculate_recombination_rates(const PositionDependentParameter 
 
 			R = -get_interface_electron_trap_DOS(pair_number) * C_n * C_p / (C_n * (n + n_1) + C_p * (p + p_1));
 
+			if(hole_concentration.data[trap_site] >= hole_concentration.data[opposite_site])
+				hole_rate_coef.data[trap_site] += n * R;
+			else
+				hole_rate_coef.data[opposite_site] += n * R;
+
+			if(electron_concentration.data[trap_site] >= electron_concentration.data[opposite_site])
+				electron_rate_coef.data[trap_site] += p * R;
+			else
+				electron_rate_coef.data[opposite_site] += p * R;
+			/*
 			hole_rate_coef.data[trap_site] += (hole_concentration.data[trap_site] / p) * n * R;
 			hole_rate_coef.data[opposite_site] += (hole_concentration.data[opposite_site] / p) * n * R;
 
 			electron_rate_coef.data[trap_site] += (electron_concentration.data[trap_site] / n) * p * R;
 			electron_rate_coef.data[opposite_site] += (electron_concentration.data[opposite_site] / n) * p * R;
+			*/
 		}
 
 	}
