@@ -1,5 +1,4 @@
 #include <iostream>
-#include <mpi.h>
 #include <boost/property_tree/ptree.hpp>
 
 #include "Control.h" // Contains functions for running various experiments. Use them in order to keep main() organized and clear. The functions are wrapped in a namespace, syntax: control::function().
