@@ -100,7 +100,7 @@ namespace control{
 				positive_ion.ion_solve(material, potential);
 			}
 
-
+			
 
 			counter++;
 
@@ -187,29 +187,19 @@ namespace control{
 				potential.solve_one_d(material, electron.concentration, hole.concentration, negative_ion.concentration, positive_ion.concentration);
 			}
 			else{
-				potential.solve(material, electron.concentration, hole.concentration, negative_ion.concentration, positive_ion.concentration);
+				potential.solve_inverse(material, electron.concentration, hole.concentration, negative_ion.concentration, positive_ion.concentration);
 			}
 		
-			if (counter % 2 == 0){
-				if (electron.concentration.points_y == 1){
-					electron.solve_one_d(material, potential, previous_electroncon_concentration, time_step);
-					hole.solve_one_d(material, potential, previous_holecon_concentration, time_step);
-				}
-				else{
-					electron.solve(material, potential, previous_electroncon_concentration, time_step);
-					hole.solve(material, potential, previous_holecon_concentration, time_step);
-				}
+
+			if (electron.concentration.points_y == 1){
+				electron.solve_one_d(material, potential, previous_electroncon_concentration, time_step);
+				hole.solve_one_d(material, potential, previous_holecon_concentration, time_step);
 			}
 			else{
-				if (electron.concentration.points_y == 1){
-					hole.solve_one_d(material, potential, previous_holecon_concentration, time_step);
-					electron.solve_one_d(material, potential, previous_electroncon_concentration, time_step);
-				}
-				else{
-					hole.solve(material, potential, previous_holecon_concentration, time_step);
-					electron.solve(material, potential, previous_electroncon_concentration, time_step);
-				}
+				electron.solve_inverse(material, potential, previous_electroncon_concentration, time_step);
+				hole.solve_inverse(material, potential, previous_holecon_concentration, time_step);
 			}
+			
 		//	if (mid_gap_states)
 		//		material.calculate_MG_state_population(potential.electrical, electron.concentration, hole.concentration);
 
@@ -474,7 +464,7 @@ namespace control{
 
 				if (measurement.experiment_PhotoCELIV && i == 1)
 					morphology.light_on();
-				else if (measurement.experiment_PhotoCELIV)
+				else
 					morphology.light_off();
 
 				potential.set_boundary_conditions(morphology);
