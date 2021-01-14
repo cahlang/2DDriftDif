@@ -69,7 +69,7 @@ void Potential::solve_inverse(Morphology &material, const PositionDependentParam
 					site_y_plus = site + 1 - electrical.points_y;
 
 				A.insert(site - electrical.points_y, site - electrical.points_y) = -(material.get_relative_permittivity(site, site_x_minus) + material.get_relative_permittivity(site, site_x_plus)) / pow(electrical.spacing_x, 2.0)
-					- (material.get_relative_permittivity(site, site_y_minus) + material.get_relative_permittivity(site, site_y_plus)) / pow(electrical.spacing_y, 2.0) + (electron_concentration.data[site] + hole_concentration.data[site]);
+					- (material.get_relative_permittivity(site, site_y_minus) + material.get_relative_permittivity(site, site_y_plus)) / pow(electrical.spacing_y, 2.0);
 				if (i > 1)
 					A.insert(site - electrical.points_y, site_x_minus - electrical.points_y) = material.get_relative_permittivity(site, site_x_minus) / pow(electrical.spacing_x, 2.0);
 
@@ -80,7 +80,7 @@ void Potential::solve_inverse(Morphology &material, const PositionDependentParam
 				A.insert(site - electrical.points_y, site_y_plus - electrical.points_y) = material.get_relative_permittivity(site, site_y_plus) / pow(electrical.spacing_y, 2.0);
 
 				b(site - electrical.points_y) = electron_concentration.data[site] - hole_concentration.data[site] - material.dopants.data[site] + material.MG_electron_concentration.data[site]
-					- material.MG_hole_concentration.data[site] + (electron_concentration.data[site] + hole_concentration.data[site]) * previous.data[site];
+					- material.MG_hole_concentration.data[site];
 				if (i == 1)
 					b(site - electrical.points_y) += -material.get_relative_permittivity(site, site_x_minus) * material.get_electrode_potential(0) / pow(electrical.spacing_x, 2.0);
 				if (i == electrical.points_x - 2)
@@ -399,7 +399,7 @@ void Potential::set_initial_guess(Morphology device_properties, std::string file
 		}
 
 	}
-	else if (initial_guess == 1){
+	else if (initial_guess == 1 || initial_guess == 3){
 		for (int i = 0; i < electrical.points_x; i++){
 			for (int j = 0; j < electrical.points_y; j++){
 				int site = i*electrical.points_y + j;

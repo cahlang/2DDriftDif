@@ -476,7 +476,7 @@ namespace control{
 				hole.set_boundary_conditions(morphology, potential.electrical);
 				if (!measurement.iterate_forward || i == 0)
 					hole.set_initial_guess(morphology, potential.electrical, "initial_guess\\holecon", i);
-				if (!measurement.iterate_forward || i == 0)
+				if (!measurement.iterate_forward || i == 0 && mid_gap_states)
 					morphology.set_MG_initial_guess();
 				if (morphology.ion_transport_activated()){
 					negative_ion.set_ion_boundary_conditions(morphology);

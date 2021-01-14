@@ -119,8 +119,9 @@ void PositiveMobileCharge::solve_inverse(Morphology &material, const Potential &
 
 							int electrode_number = material.electrode_material_interface[electrode_material_interface_number].get_electrode_number();
 							double work_function = material.get_work_function(electrode_number);
+							double electrode_potential = material.get_electrode_potential(electrode_number);
 
-							b(site - concentration.points_y) = -material.get_surface_recombination_velocity_hole(electrode_material_interface_number) / concentration.spacing_x * material.get_hole_trans_DOS(site) * std::min(exp(work_function - material.get_hole_trans_energy(site)),1.0);
+							b(site - concentration.points_y) = -material.get_surface_recombination_velocity_hole(electrode_material_interface_number) / concentration.spacing_x * material.get_hole_trans_DOS(site) * std::min(exp(work_function + electrode_potential - material.get_hole_trans_energy(site) - potential.electrical.data[site]),1.0);
 						}
 						else if (material.is_electrode(site_x_plus)){
 							tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -1.0 / pow(concentration.spacing_x, 2.0) * material.get_hole_mobility(site, site_x_minus) * calc::bernou(potential.electrical.data[site_x_minus] + material.get_hole_trans_energy(site_x_minus) - potential.electrical.data[site] - material.get_hole_trans_energy(site))
@@ -305,8 +306,9 @@ void PositiveMobileCharge::solve_inverse(Morphology& material, const Potential& 
 
 							int electrode_number = material.electrode_material_interface[electrode_material_interface_number].get_electrode_number();
 							double work_function = material.get_work_function(electrode_number);
+							double electrode_potential = material.get_electrode_potential(electrode_number);
 
-							b(site - concentration.points_y) = -material.get_surface_recombination_velocity_hole(electrode_material_interface_number) / concentration.spacing_x * material.get_hole_trans_DOS(site) * std::min(exp(work_function - material.get_hole_trans_energy(site)), 1.0);
+							b(site - concentration.points_y) = -material.get_surface_recombination_velocity_hole(electrode_material_interface_number) / concentration.spacing_x * material.get_hole_trans_DOS(site) * std::min(exp(work_function + electrode_potential - material.get_hole_trans_energy(site) - potential.electrical.data[site]), 1.0);
 						}
 						else if (material.is_electrode(site_x_plus)) {
 							tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -1.0 / pow(concentration.spacing_x, 2.0) * material.get_hole_mobility(site, site_x_minus) * calc::bernou(potential.electrical.data[site_x_minus] + material.get_hole_trans_energy(site_x_minus) - potential.electrical.data[site] - material.get_hole_trans_energy(site))
@@ -1097,6 +1099,16 @@ void PositiveMobileCharge::set_initial_guess(Morphology &device_properties, cons
 					else if (device_properties.get_material_number(device_properties.get_lattice_number(site)) == 1){
 						concentration.data[site] = device_properties.get_hole_trans_DOS(site) * std::min(exp(device_properties.get_work_function(1) - device_properties.get_hole_trans_energy(site) - electric_potential.data[site]), 1.0);
 					}
+				}
+			}
+		}
+	}
+	else if (initial_guess == 3) {
+		for (int i = 0; i < concentration.points_x; i++) {
+			for (int j = 0; j < concentration.points_y; j++) {
+				int site = i * concentration.points_y + j;
+				if (concentration.calculate_this[site] == true && !device_properties.is_electrode_interface(site)) {
+					concentration.data[site] = 0.0;
 				}
 			}
 		}
