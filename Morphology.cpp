@@ -449,15 +449,59 @@ void Morphology::calculate_recombination_rates(const PositionDependentParameter 
 		for (int pair_number = 0; pair_number < interface_pair_data.size(); pair_number++){
 			std::array<int, 2> site = interface_pair_data[pair_number].get_pair_sites();
 			int trap_site, opposite_site;
-			if (get_material_number(get_lattice_number(site[0])) == get_hole_trap_material_number(pair_number)){
+			double n, n_1, p, p_1, C_p, C_n, R;
+
+			// Hole trap recombination
+
+			if (get_material_number(get_lattice_number(site[0])) == get_hole_trap_material_number(pair_number)) {
 				trap_site = site[0];
 				opposite_site = site[1];
 			}
-			else{
+			else {
 				trap_site = site[1];
 				opposite_site = site[0];
 			}
 
+			C_n = get_interface_hole_trap_electron_capture_coef(pair_number);
+			C_p = get_interface_hole_trap_hole_capture_coef(pair_number);
+
+			// Between charges at trap site
+			p_1 = get_hole_trans_DOS(trap_site) * misc::single_level_fermi_dist(get_hole_trans_energy(trap_site), get_interface_hole_trap_energy(pair_number));
+			n_1 = get_electron_trans_DOS(trap_site) * misc::single_level_fermi_dist(get_interface_hole_trap_energy(pair_number), get_electron_trans_energy(trap_site));
+
+			p = hole_concentration.data[trap_site];
+			n = electron_concentration.data[trap_site];
+
+			R = -get_interface_hole_trap_DOS(pair_number) * C_n * C_p / (C_n * (n + n_1) + C_p * (p + p_1));
+
+			hole_rate_coef.data[trap_site] += n * R;
+			electron_rate_coef.data[trap_site] += p * R;
+
+			// between hole at trap site & electron at opposite site
+			p_1 = get_hole_trans_DOS(trap_site) * misc::single_level_fermi_dist(get_hole_trans_energy(trap_site), get_interface_hole_trap_energy(pair_number));
+			n_1 = get_electron_trans_DOS(opposite_site) * misc::single_level_fermi_dist(get_interface_hole_trap_energy(pair_number) + electric_potential.data[trap_site], get_electron_trans_energy(opposite_site) + electric_potential.data[opposite_site]);
+
+			p = hole_concentration.data[trap_site];
+			n = electron_concentration.data[opposite_site];
+
+			R = -get_interface_hole_trap_DOS(pair_number) * C_n * C_p / (C_n * (n + n_1) + C_p * (p + p_1));
+
+			hole_rate_coef.data[trap_site] += n * R;
+			electron_rate_coef.data[opposite_site] += p * R;
+
+			// between electron at trap site & hole at opposite site
+
+			p_1 = get_hole_trans_DOS(opposite_site) * misc::single_level_fermi_dist(get_hole_trans_energy(opposite_site) + electric_potential.data[opposite_site], get_interface_hole_trap_energy(pair_number) + electric_potential.data[trap_site]);
+			n_1 = get_electron_trans_DOS(trap_site) * misc::single_level_fermi_dist(get_interface_hole_trap_energy(pair_number), get_electron_trans_energy(trap_site));
+
+			p = hole_concentration.data[opposite_site];
+			n = electron_concentration.data[trap_site];
+
+			R = -get_interface_hole_trap_DOS(pair_number) * C_n * C_p / (C_n * (n + n_1) + C_p * (p + p_1));
+
+			hole_rate_coef.data[opposite_site] += n * R;
+			electron_rate_coef.data[trap_site] += p * R;
+			/*
 			double p_1 = get_hole_trans_DOS(trap_site) * misc::single_level_fermi_dist(get_hole_trans_energy(trap_site), get_interface_hole_trap_energy(pair_number))
 				+ get_hole_trans_DOS(opposite_site) * misc::single_level_fermi_dist(get_hole_trans_energy(opposite_site) + electric_potential.data[opposite_site], get_interface_hole_trap_energy(pair_number) + electric_potential.data[trap_site]);
 
@@ -481,6 +525,9 @@ void Morphology::calculate_recombination_rates(const PositionDependentParameter 
 				electron_rate_coef.data[trap_site] += p * R;
 			else
 				electron_rate_coef.data[opposite_site] += p * R;
+			*/
+
+			// Electron trap recombination
 
 			if (get_material_number(get_lattice_number(site[0])) == get_electron_trap_material_number(pair_number)){
 				trap_site = site[0];
@@ -491,6 +538,48 @@ void Morphology::calculate_recombination_rates(const PositionDependentParameter 
 				opposite_site = site[0];
 			}
 
+			C_n = get_interface_electron_trap_electron_capture_coef(pair_number);
+			C_p = get_interface_electron_trap_hole_capture_coef(pair_number);
+
+			// Between charges at trap site
+			p_1 = get_hole_trans_DOS(trap_site) * misc::single_level_fermi_dist(get_hole_trans_energy(trap_site), get_interface_electron_trap_energy(pair_number));
+			n_1 = get_electron_trans_DOS(trap_site) * misc::single_level_fermi_dist(get_interface_electron_trap_energy(pair_number), get_electron_trans_energy(trap_site));
+
+			p = hole_concentration.data[opposite_site];
+			n = electron_concentration.data[trap_site];
+
+			R = -get_interface_hole_trap_DOS(pair_number) * C_n * C_p / (C_n * (n + n_1) + C_p * (p + p_1));
+
+			hole_rate_coef.data[opposite_site] += n * R;
+			electron_rate_coef.data[trap_site] += p * R;
+
+			// Between hole at trap site and electron at opposite site
+
+			p_1 = get_hole_trans_DOS(trap_site) * misc::single_level_fermi_dist(get_hole_trans_energy(trap_site), get_interface_electron_trap_energy(pair_number));
+			n_1 = get_electron_trans_DOS(opposite_site) * misc::single_level_fermi_dist(get_interface_electron_trap_energy(pair_number) + electric_potential.data[trap_site], get_electron_trans_energy(opposite_site) + electric_potential.data[opposite_site]);
+
+			p = hole_concentration.data[trap_site];
+			n = electron_concentration.data[opposite_site];
+
+			R = -get_interface_hole_trap_DOS(pair_number) * C_n * C_p / (C_n * (n + n_1) + C_p * (p + p_1));
+
+			hole_rate_coef.data[trap_site] += n * R;
+			electron_rate_coef.data[opposite_site] += p * R;
+
+			// Between electron at trap site and hole at opposite site
+
+			p_1 = get_hole_trans_DOS(opposite_site) * misc::single_level_fermi_dist(get_hole_trans_energy(opposite_site) + electric_potential.data[opposite_site], get_interface_electron_trap_energy(pair_number) + electric_potential.data[trap_site]);
+			n_1 = get_electron_trans_DOS(trap_site) * misc::single_level_fermi_dist(get_interface_electron_trap_energy(pair_number), get_electron_trans_energy(trap_site));
+
+			p = hole_concentration.data[opposite_site];
+			n = electron_concentration.data[trap_site];
+
+			R = -get_interface_hole_trap_DOS(pair_number) * C_n * C_p / (C_n * (n + n_1) + C_p * (p + p_1));
+
+			hole_rate_coef.data[opposite_site] += n * R;
+			electron_rate_coef.data[trap_site] += p * R;
+
+			/*
 			p_1 = get_hole_trans_DOS(trap_site) * misc::single_level_fermi_dist(get_hole_trans_energy(trap_site), get_interface_electron_trap_energy(pair_number))
 				+ get_hole_trans_DOS(opposite_site) * misc::single_level_fermi_dist(get_hole_trans_energy(opposite_site) + electric_potential.data[opposite_site], get_interface_electron_trap_energy(pair_number) + electric_potential.data[trap_site]);
 
@@ -504,7 +593,7 @@ void Morphology::calculate_recombination_rates(const PositionDependentParameter 
 			C_p = get_interface_electron_trap_hole_capture_coef(pair_number);
 
 			R = -get_interface_electron_trap_DOS(pair_number) * C_n * C_p / (C_n * (n + n_1) + C_p * (p + p_1));
-
+			
 			if(hole_concentration.data[trap_site] >= hole_concentration.data[opposite_site])
 				hole_rate_coef.data[trap_site] += n * R;
 			else
@@ -514,7 +603,9 @@ void Morphology::calculate_recombination_rates(const PositionDependentParameter 
 				electron_rate_coef.data[trap_site] += p * R;
 			else
 				electron_rate_coef.data[opposite_site] += p * R;
+				*/
 			/*
+
 			hole_rate_coef.data[trap_site] += (hole_concentration.data[trap_site] / p) * n * R;
 			hole_rate_coef.data[opposite_site] += (hole_concentration.data[opposite_site] / p) * n * R;
 

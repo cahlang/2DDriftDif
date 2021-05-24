@@ -39,7 +39,7 @@ namespace calc{
 				// DO SOMETHING ABOUT THIS!
 				row_current[i] += electron_current.data[site] + hole_current.data[site] + displacement_current.data[site];
 				if (abs(net_rate.data[site_x_plus] * net_rate.spacing_x) >= abs(1E-7*(electron_current.data[site] + hole_current.data[site])) && abs(net_rate.data[site] * net_rate.spacing_x) >= abs(1E-7*(electron_current.data[site] + hole_current.data[site])))
-				row_current[i] += (net_rate.data[site_x_plus] - net_rate.data[site]) * net_rate.spacing_x * 0.5;
+				row_current[i] += abs(net_rate.data[site_x_plus] - net_rate.data[site]) * net_rate.spacing_x * 0.5;
 				
 
 
