@@ -75,7 +75,8 @@ namespace control{
 
 		while (!has_converged && counter <= constant::max_iteration_step){
 
-			determine_rates(material, net_rate, electron, hole, potential.electrical);
+			if(counter != 0)
+				determine_rates(material, net_rate, electron, hole, potential.electrical);
 
 			if (electron.concentration.points_y == 1)
 				potential.solve_one_d(material, electron.concentration, hole.concentration, negative_ion.concentration, positive_ion.concentration);

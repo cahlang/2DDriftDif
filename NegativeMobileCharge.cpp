@@ -68,6 +68,7 @@ void NegativeMobileCharge::solve_inverse(Morphology &material, const Potential &
 		for (int j = 0; j < concentration.points_y; j++){
 
 			int site, site_x_minus, site_x_plus, site_y_minus, site_y_plus;
+			int point, point_y_minus, point_x_minus, point_x_plus, point_y_plus;
 
 			site = i * concentration.points_y + j;
 
@@ -84,6 +85,12 @@ void NegativeMobileCharge::solve_inverse(Morphology &material, const Potential &
 				else
 					site_y_plus = site + 1 - concentration.points_y;
 
+				point_x_minus = site_x_minus - concentration.points_y;
+				point_y_minus = site_y_minus - concentration.points_y;
+				point_x_plus = site_x_plus - concentration.points_y;
+				point_y_plus = site_y_plus - concentration.points_y;
+				point = site - concentration.points_y;
+
 				if (material.is_electrode_interface(site) && !material.surface_recombination_activated(material.get_electrode_material_interface_number(site))){
 					// calculates the value of the concentration at site.
 					int interface_number = material.get_electrode_material_interface_number(site);
@@ -97,24 +104,24 @@ void NegativeMobileCharge::solve_inverse(Morphology &material, const Potential &
 						int electrode_material_interface_number = material.get_electrode_material_interface_number(site);
 						if (material.is_electrode(site_x_minus)){
 
-							tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -1.0 / pow(concentration.spacing_x, 2.0) * (material.get_electron_mobility(site, site_x_plus) * calc::bernou(potential.electrical.data[site] + material.get_electron_trans_energy(site) - potential.electrical.data[site_x_plus] - material.get_electron_trans_energy(site_x_plus)))
+							tripletList.push_back(Trip(point, point, -1.0 / pow(concentration.spacing_x, 2.0) * (material.get_electron_mobility(site, site_x_plus) * calc::bernou(potential.electrical.data[site] + material.get_electron_trans_energy(site) - potential.electrical.data[site_x_plus] - material.get_electron_trans_energy(site_x_plus)))
 								- material.get_surface_recombination_velocity_electron(electrode_material_interface_number) / concentration.spacing_x));
 
-							tripletList.push_back(Trip(site - concentration.points_y, site_x_plus - concentration.points_y, material.get_electron_mobility(site, site_x_plus) / pow(concentration.spacing_x, 2.0) * calc::bernou(potential.electrical.data[site_x_plus] + material.get_electron_trans_energy(site_x_plus) - potential.electrical.data[site] - material.get_electron_trans_energy(site))));
+							tripletList.push_back(Trip(point, point_x_plus, material.get_electron_mobility(site, site_x_plus) / pow(concentration.spacing_x, 2.0) * calc::bernou(potential.electrical.data[site_x_plus] + material.get_electron_trans_energy(site_x_plus) - potential.electrical.data[site] - material.get_electron_trans_energy(site))));
 
 							if ((material.is_interface(site) && material.is_interface(site_y_minus) && (material.get_lattice_number(site) != material.get_lattice_number(site_y_minus)))){
 								int pair_number = material.get_interface_pair(site, site_y_minus);
-								tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_y * std::min(exp(material.get_electron_trans_energy(site_y_minus) + potential.electrical.data[site_y_minus] - material.get_electron_trans_energy(site) - potential.electrical.data[site]), 1.0)));
-								tripletList.push_back(Trip(site - concentration.points_y, site_y_minus - concentration.points_y, material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_y *std::min(exp(material.get_electron_trans_energy(site) + potential.electrical.data[site] - material.get_electron_trans_energy(site_y_minus) - potential.electrical.data[site_y_minus]), 1.0)));
+								tripletList.push_back(Trip(point, point, -material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_y * std::min(exp(material.get_electron_trans_energy(site_y_minus) + potential.electrical.data[site_y_minus] - material.get_electron_trans_energy(site) - potential.electrical.data[site]), 1.0)));
+								tripletList.push_back(Trip(point, point_y_minus, material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_y *std::min(exp(material.get_electron_trans_energy(site) + potential.electrical.data[site] - material.get_electron_trans_energy(site_y_minus) - potential.electrical.data[site_y_minus]), 1.0)));
 							}
 							else{
-								tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -material.get_electron_mobility(site, site_y_minus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_electron_trans_energy(site) - potential.electrical.data[site_y_minus] - material.get_electron_trans_energy(site_y_minus))));
-								tripletList.push_back(Trip(site - concentration.points_y, site_y_minus - concentration.points_y, material.get_electron_mobility(site, site_y_minus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site_y_minus] + material.get_electron_trans_energy(site_y_minus) - potential.electrical.data[site] - material.get_electron_trans_energy(site))));
+								tripletList.push_back(Trip(point, point, -material.get_electron_mobility(site, site_y_minus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_electron_trans_energy(site) - potential.electrical.data[site_y_minus] - material.get_electron_trans_energy(site_y_minus))));
+								tripletList.push_back(Trip(point, point_y_minus, material.get_electron_mobility(site, site_y_minus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site_y_minus] + material.get_electron_trans_energy(site_y_minus) - potential.electrical.data[site] - material.get_electron_trans_energy(site))));
 							}
 							if ((material.is_interface(site) && material.is_interface(site_y_plus) && (material.get_lattice_number(site) != material.get_lattice_number(site_y_plus)))){
 								int pair_number = material.get_interface_pair(site, site_y_plus);
-								tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_y * std::min(exp(material.get_electron_trans_energy(site_y_plus) + potential.electrical.data[site_y_plus] - material.get_electron_trans_energy(site) - potential.electrical.data[site]), 1.0)));
-								tripletList.push_back(Trip(site - concentration.points_y, site_y_plus - concentration.points_y, material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_y *std::min(exp(material.get_electron_trans_energy(site) + potential.electrical.data[site] - material.get_electron_trans_energy(site_y_plus) - potential.electrical.data[site_y_plus]), 1.0)));
+								tripletList.push_back(Trip(point, point, -material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_y * std::min(exp(material.get_electron_trans_energy(site_y_plus) + potential.electrical.data[site_y_plus] - material.get_electron_trans_energy(site) - potential.electrical.data[site]), 1.0)));
+								tripletList.push_back(Trip(point, point_y_plus, material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_y *std::min(exp(material.get_electron_trans_energy(site) + potential.electrical.data[site] - material.get_electron_trans_energy(site_y_plus) - potential.electrical.data[site_y_plus]), 1.0)));
 							}
 							else{
 								tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -material.get_electron_mobility(site, site_y_plus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_electron_trans_energy(site) - potential.electrical.data[site_y_plus] - material.get_electron_trans_energy(site_y_plus))));
@@ -125,37 +132,37 @@ void NegativeMobileCharge::solve_inverse(Morphology &material, const Potential &
 							double work_function = material.get_work_function(electrode_number);
 							double electrode_potential = material.get_electrode_potential(electrode_number);
 
-							b(site - concentration.points_y) = -material.get_surface_recombination_velocity_electron(electrode_material_interface_number) / concentration.spacing_x * material.get_electron_trans_DOS(site) * std::min(exp(material.get_electron_trans_energy(site) + potential.electrical.data[site] - work_function - electrode_potential), 1.0);
+							b(point) = -material.get_surface_recombination_velocity_electron(electrode_material_interface_number) / concentration.spacing_x * material.get_electron_trans_DOS(site) * std::min(exp(material.get_electron_trans_energy(site) - work_function), 1.0);
 						}
 						else if (material.is_electrode(site_x_plus)){
-							tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -1.0 / pow(concentration.spacing_x, 2.0) * (material.get_electron_mobility(site, site_x_minus) * calc::bernou(potential.electrical.data[site] + material.get_electron_trans_energy(site) - potential.electrical.data[site_x_minus] - material.get_electron_trans_energy(site_x_minus)))
+							tripletList.push_back(Trip(point, point, -1.0 / pow(concentration.spacing_x, 2.0) * (material.get_electron_mobility(site, site_x_minus) * calc::bernou(potential.electrical.data[site] + material.get_electron_trans_energy(site) - potential.electrical.data[site_x_minus] - material.get_electron_trans_energy(site_x_minus)))
 								- material.get_surface_recombination_velocity_electron(electrode_material_interface_number) / concentration.spacing_x));
-							tripletList.push_back(Trip(site - concentration.points_y, site_x_minus - concentration.points_y, material.get_electron_mobility(site, site_x_minus) / pow(concentration.spacing_x, 2.0) * calc::bernou(potential.electrical.data[site_x_minus] + material.get_electron_trans_energy(site_x_minus) - potential.electrical.data[site] - material.get_electron_trans_energy(site))));
+							tripletList.push_back(Trip(point, point_x_minus, material.get_electron_mobility(site, site_x_minus) / pow(concentration.spacing_x, 2.0) * calc::bernou(potential.electrical.data[site_x_minus] + material.get_electron_trans_energy(site_x_minus) - potential.electrical.data[site] - material.get_electron_trans_energy(site))));
 
 							if ((material.is_interface(site) && material.is_interface(site_y_minus) && (material.get_lattice_number(site) != material.get_lattice_number(site_y_minus)))){
 								int pair_number = material.get_interface_pair(site, site_y_minus);
-								tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_y * std::min(exp(material.get_electron_trans_energy(site_y_minus) + potential.electrical.data[site_y_minus] - material.get_electron_trans_energy(site) - potential.electrical.data[site]), 1.0)));
-								tripletList.push_back(Trip(site - concentration.points_y, site_y_minus - concentration.points_y, material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_y *std::min(exp(material.get_electron_trans_energy(site) + potential.electrical.data[site] - material.get_electron_trans_energy(site_y_minus) - potential.electrical.data[site_y_minus]), 1.0)));
+								tripletList.push_back(Trip(point, point, -material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_y * std::min(exp(material.get_electron_trans_energy(site_y_minus) + potential.electrical.data[site_y_minus] - material.get_electron_trans_energy(site) - potential.electrical.data[site]), 1.0)));
+								tripletList.push_back(Trip(point, point_y_minus, material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_y *std::min(exp(material.get_electron_trans_energy(site) + potential.electrical.data[site] - material.get_electron_trans_energy(site_y_minus) - potential.electrical.data[site_y_minus]), 1.0)));
 							}
 							else{
-								tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -material.get_electron_mobility(site, site_y_minus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_electron_trans_energy(site) - potential.electrical.data[site_y_minus] - material.get_electron_trans_energy(site_y_minus))));
-								tripletList.push_back(Trip(site - concentration.points_y, site_y_minus - concentration.points_y, material.get_electron_mobility(site, site_y_minus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site_y_minus] + material.get_electron_trans_energy(site_y_minus) - potential.electrical.data[site] - material.get_electron_trans_energy(site))));
+								tripletList.push_back(Trip(point, point, -material.get_electron_mobility(site, site_y_minus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_electron_trans_energy(site) - potential.electrical.data[site_y_minus] - material.get_electron_trans_energy(site_y_minus))));
+								tripletList.push_back(Trip(point, point_y_minus, material.get_electron_mobility(site, site_y_minus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site_y_minus] + material.get_electron_trans_energy(site_y_minus) - potential.electrical.data[site] - material.get_electron_trans_energy(site))));
 							}
 							if ((material.is_interface(site) && material.is_interface(site_y_plus) && (material.get_lattice_number(site) != material.get_lattice_number(site_y_plus)))){
 								int pair_number = material.get_interface_pair(site, site_y_plus);
-								tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_y * std::min(exp(material.get_electron_trans_energy(site_y_plus) + potential.electrical.data[site_y_plus] - material.get_electron_trans_energy(site) - potential.electrical.data[site]), 1.0)));
-								tripletList.push_back(Trip(site - concentration.points_y, site_y_plus - concentration.points_y, material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_y *std::min(exp(material.get_electron_trans_energy(site) + potential.electrical.data[site] - material.get_electron_trans_energy(site_y_plus) - potential.electrical.data[site_y_plus]), 1.0)));
+								tripletList.push_back(Trip(point, point, -material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_y * std::min(exp(material.get_electron_trans_energy(site_y_plus) + potential.electrical.data[site_y_plus] - material.get_electron_trans_energy(site) - potential.electrical.data[site]), 1.0)));
+								tripletList.push_back(Trip(point, point_y_plus, material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_y *std::min(exp(material.get_electron_trans_energy(site) + potential.electrical.data[site] - material.get_electron_trans_energy(site_y_plus) - potential.electrical.data[site_y_plus]), 1.0)));
 							}
 							else{
-								tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -material.get_electron_mobility(site, site_y_plus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_electron_trans_energy(site) - potential.electrical.data[site_y_plus] - material.get_electron_trans_energy(site_y_plus))));
-								tripletList.push_back(Trip(site - concentration.points_y, site_y_plus - concentration.points_y, material.get_electron_mobility(site, site_y_plus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site_y_plus] + material.get_electron_trans_energy(site_y_plus) - potential.electrical.data[site] - material.get_electron_trans_energy(site))));
+								tripletList.push_back(Trip(point, point, -material.get_electron_mobility(site, site_y_plus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_electron_trans_energy(site) - potential.electrical.data[site_y_plus] - material.get_electron_trans_energy(site_y_plus))));
+								tripletList.push_back(Trip(point, point_y_plus, material.get_electron_mobility(site, site_y_plus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site_y_plus] + material.get_electron_trans_energy(site_y_plus) - potential.electrical.data[site] - material.get_electron_trans_energy(site))));
 							}
 
 							int electrode_number = material.electrode_material_interface[electrode_material_interface_number].get_electrode_number();
 							double work_function = material.get_work_function(electrode_number);
 							double electrode_potential = material.get_electrode_potential(electrode_number);
 
-							b(site - concentration.points_y) = -material.get_surface_recombination_velocity_electron(electrode_material_interface_number) / concentration.spacing_x * material.get_electron_trans_DOS(site) * std::min(exp(material.get_electron_trans_energy(site) + potential.electrical.data[site] - work_function - electrode_potential), 1.0);
+							b(point) = -material.get_surface_recombination_velocity_electron(electrode_material_interface_number) / concentration.spacing_x * material.get_electron_trans_DOS(site) * std::min(exp(material.get_electron_trans_energy(site) - work_function), 1.0);
 
 						}
 					}
@@ -163,43 +170,43 @@ void NegativeMobileCharge::solve_inverse(Morphology &material, const Potential &
 
 						if ((material.is_interface(site) && material.is_interface(site_x_minus) && (material.get_lattice_number(site) != material.get_lattice_number(site_x_minus)))){
 							int pair_number = material.get_interface_pair(site, site_x_minus);
-							tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_x * std::min(exp(material.get_electron_trans_energy(site_x_minus) + potential.electrical.data[site_x_minus] - material.get_electron_trans_energy(site) - potential.electrical.data[site]), 1.0)));
-							tripletList.push_back(Trip(site - concentration.points_y, site_x_minus - concentration.points_y, material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_x *std::min(exp(material.get_electron_trans_energy(site) + potential.electrical.data[site] - material.get_electron_trans_energy(site_x_minus) - potential.electrical.data[site_x_minus]), 1.0)));
+							tripletList.push_back(Trip(point, point, -material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_x * std::min(exp(material.get_electron_trans_energy(site_x_minus) + potential.electrical.data[site_x_minus] - material.get_electron_trans_energy(site) - potential.electrical.data[site]), 1.0)));
+							tripletList.push_back(Trip(point, point_x_minus, material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_x *std::min(exp(material.get_electron_trans_energy(site) + potential.electrical.data[site] - material.get_electron_trans_energy(site_x_minus) - potential.electrical.data[site_x_minus]), 1.0)));
 						}
 						else{
-							tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -material.get_electron_mobility(site, site_x_minus) / pow(concentration.spacing_x, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_electron_trans_energy(site) - potential.electrical.data[site_x_minus] - material.get_electron_trans_energy(site_x_minus))));
-							tripletList.push_back(Trip(site - concentration.points_y, site_x_minus - concentration.points_y, material.get_electron_mobility(site, site_x_minus) / pow(concentration.spacing_x, 2.0) * calc::bernou(potential.electrical.data[site_x_minus] + material.get_electron_trans_energy(site_x_minus) - potential.electrical.data[site] - material.get_electron_trans_energy(site))));
+							tripletList.push_back(Trip(point, point, -material.get_electron_mobility(site, site_x_minus) / pow(concentration.spacing_x, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_electron_trans_energy(site) - potential.electrical.data[site_x_minus] - material.get_electron_trans_energy(site_x_minus))));
+							tripletList.push_back(Trip(point, point_x_minus, material.get_electron_mobility(site, site_x_minus) / pow(concentration.spacing_x, 2.0) * calc::bernou(potential.electrical.data[site_x_minus] + material.get_electron_trans_energy(site_x_minus) - potential.electrical.data[site] - material.get_electron_trans_energy(site))));
 						}
 
 						if ((material.is_interface(site) && material.is_interface(site_x_plus) && (material.get_lattice_number(site) != material.get_lattice_number(site_x_plus)))){
 							int pair_number = material.get_interface_pair(site, site_x_plus);
-							tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_x * std::min(exp(material.get_electron_trans_energy(site_x_plus) + potential.electrical.data[site_x_plus] - material.get_electron_trans_energy(site) - potential.electrical.data[site]), 1.0)));
-							tripletList.push_back(Trip(site - concentration.points_y, site_x_plus - concentration.points_y, material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_x * std::min(exp(material.get_electron_trans_energy(site) + potential.electrical.data[site] - material.get_electron_trans_energy(site_x_plus) - potential.electrical.data[site_x_plus]), 1.0)));
+							tripletList.push_back(Trip(point, point, -material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_x * std::min(exp(material.get_electron_trans_energy(site_x_plus) + potential.electrical.data[site_x_plus] - material.get_electron_trans_energy(site) - potential.electrical.data[site]), 1.0)));
+							tripletList.push_back(Trip(point, point_x_plus, material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_x * std::min(exp(material.get_electron_trans_energy(site) + potential.electrical.data[site] - material.get_electron_trans_energy(site_x_plus) - potential.electrical.data[site_x_plus]), 1.0)));
 						}
 						else{
-							tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -material.get_electron_mobility(site, site_x_plus) / pow(concentration.spacing_x, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_electron_trans_energy(site) - potential.electrical.data[site_x_plus] - material.get_electron_trans_energy(site_x_plus))));
-							tripletList.push_back(Trip(site - concentration.points_y, site_x_plus - concentration.points_y, material.get_electron_mobility(site, site_x_plus) / pow(concentration.spacing_x, 2.0) * calc::bernou(potential.electrical.data[site_x_plus] + material.get_electron_trans_energy(site_x_plus) - potential.electrical.data[site] - material.get_electron_trans_energy(site))));
+							tripletList.push_back(Trip(point, point, -material.get_electron_mobility(site, site_x_plus) / pow(concentration.spacing_x, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_electron_trans_energy(site) - potential.electrical.data[site_x_plus] - material.get_electron_trans_energy(site_x_plus))));
+							tripletList.push_back(Trip(point, point_x_plus, material.get_electron_mobility(site, site_x_plus) / pow(concentration.spacing_x, 2.0) * calc::bernou(potential.electrical.data[site_x_plus] + material.get_electron_trans_energy(site_x_plus) - potential.electrical.data[site] - material.get_electron_trans_energy(site))));
 						}
 						if ((material.is_interface(site) && material.is_interface(site_y_minus) && (material.get_lattice_number(site) != material.get_lattice_number(site_y_minus)))){
 							int pair_number = material.get_interface_pair(site, site_y_minus);
-							tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_y * std::min(exp(material.get_electron_trans_energy(site_y_minus) + potential.electrical.data[site_y_minus] - material.get_electron_trans_energy(site) - potential.electrical.data[site]), 1.0)));
-							tripletList.push_back(Trip(site - concentration.points_y, site_y_minus - concentration.points_y, material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_y *std::min(exp(material.get_electron_trans_energy(site) + potential.electrical.data[site] - material.get_electron_trans_energy(site_y_minus) - potential.electrical.data[site_y_minus]), 1.0)));
+							tripletList.push_back(Trip(point, point, -material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_y * std::min(exp(material.get_electron_trans_energy(site_y_minus) + potential.electrical.data[site_y_minus] - material.get_electron_trans_energy(site) - potential.electrical.data[site]), 1.0)));
+							tripletList.push_back(Trip(point, point_y_minus - concentration.points_y, material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_y *std::min(exp(material.get_electron_trans_energy(site) + potential.electrical.data[site] - material.get_electron_trans_energy(site_y_minus) - potential.electrical.data[site_y_minus]), 1.0)));
 						}
 						else{
-							tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -material.get_electron_mobility(site, site_y_minus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_electron_trans_energy(site) - potential.electrical.data[site_y_minus] - material.get_electron_trans_energy(site_y_minus))));
-							tripletList.push_back(Trip(site - concentration.points_y, site_y_minus - concentration.points_y, material.get_electron_mobility(site, site_y_minus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site_y_minus] + material.get_electron_trans_energy(site_y_minus) - potential.electrical.data[site] - material.get_electron_trans_energy(site))));
+							tripletList.push_back(Trip(point, point, -material.get_electron_mobility(site, site_y_minus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_electron_trans_energy(site) - potential.electrical.data[site_y_minus] - material.get_electron_trans_energy(site_y_minus))));
+							tripletList.push_back(Trip(point, point_y_minus, material.get_electron_mobility(site, site_y_minus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site_y_minus] + material.get_electron_trans_energy(site_y_minus) - potential.electrical.data[site] - material.get_electron_trans_energy(site))));
 						}
 						if ((material.is_interface(site) && material.is_interface(site_y_plus) && (material.get_lattice_number(site) != material.get_lattice_number(site_y_plus)))){
 							int pair_number = material.get_interface_pair(site, site_y_plus);
-							tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_y * std::min(exp(material.get_electron_trans_energy(site_y_plus) + potential.electrical.data[site_y_plus] - material.get_electron_trans_energy(site) - potential.electrical.data[site]), 1.0)));
-							tripletList.push_back(Trip(site - concentration.points_y, site_y_plus - concentration.points_y, material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_y *std::min(exp(material.get_electron_trans_energy(site) + potential.electrical.data[site] - material.get_electron_trans_energy(site_y_plus) - potential.electrical.data[site_y_plus]), 1.0)));
+							tripletList.push_back(Trip(point, point, -material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_y * std::min(exp(material.get_electron_trans_energy(site_y_plus) + potential.electrical.data[site_y_plus] - material.get_electron_trans_energy(site) - potential.electrical.data[site]), 1.0)));
+							tripletList.push_back(Trip(point, point_y_plus, material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_y *std::min(exp(material.get_electron_trans_energy(site) + potential.electrical.data[site] - material.get_electron_trans_energy(site_y_plus) - potential.electrical.data[site_y_plus]), 1.0)));
 						}
 						else{
-							tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -material.get_electron_mobility(site, site_y_plus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_electron_trans_energy(site) - potential.electrical.data[site_y_plus] - material.get_electron_trans_energy(site_y_plus))));
-							tripletList.push_back(Trip(site - concentration.points_y, site_y_plus - concentration.points_y, material.get_electron_mobility(site, site_y_plus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site_y_plus] + material.get_electron_trans_energy(site_y_plus) - potential.electrical.data[site] - material.get_electron_trans_energy(site))));
+							tripletList.push_back(Trip(point, point, -material.get_electron_mobility(site, site_y_plus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_electron_trans_energy(site) - potential.electrical.data[site_y_plus] - material.get_electron_trans_energy(site_y_plus))));
+							tripletList.push_back(Trip(point, point_y_plus, material.get_electron_mobility(site, site_y_plus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site_y_plus] + material.get_electron_trans_energy(site_y_plus) - potential.electrical.data[site] - material.get_electron_trans_energy(site))));
 						}
-						tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, rate_coef.data[site]));
-						b(site - concentration.points_y) = -rate.data[site];
+						tripletList.push_back(Trip(point, point, rate_coef.data[site]));
+						b(point) = -rate.data[site];
 					}
 
 				

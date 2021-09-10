@@ -121,7 +121,7 @@ void PositiveMobileCharge::solve_inverse(Morphology &material, const Potential &
 							double work_function = material.get_work_function(electrode_number);
 							double electrode_potential = material.get_electrode_potential(electrode_number);
 
-							b(site - concentration.points_y) = -material.get_surface_recombination_velocity_hole(electrode_material_interface_number) / concentration.spacing_x * material.get_hole_trans_DOS(site) * std::min(exp(work_function + electrode_potential - material.get_hole_trans_energy(site) - potential.electrical.data[site]),1.0);
+							b(site - concentration.points_y) = -material.get_surface_recombination_velocity_hole(electrode_material_interface_number) / concentration.spacing_x * material.get_hole_trans_DOS(site) * std::min(exp(work_function - material.get_hole_trans_energy(site)),1.0);
 						}
 						else if (material.is_electrode(site_x_plus)){
 							tripletList.push_back(Trip(site - concentration.points_y, site - concentration.points_y, -1.0 / pow(concentration.spacing_x, 2.0) * material.get_hole_mobility(site, site_x_minus) * calc::bernou(potential.electrical.data[site_x_minus] + material.get_hole_trans_energy(site_x_minus) - potential.electrical.data[site] - material.get_hole_trans_energy(site))
@@ -151,7 +151,7 @@ void PositiveMobileCharge::solve_inverse(Morphology &material, const Potential &
 							double work_function = material.get_work_function(electrode_number);
 							double electrode_potential = material.get_electrode_potential(electrode_number);
 
-							b(site - concentration.points_y) = -material.get_surface_recombination_velocity_hole(electrode_material_interface_number) / concentration.spacing_x * material.get_hole_trans_DOS(site) * std::min(exp(work_function + electrode_potential - material.get_hole_trans_energy(site) - potential.electrical.data[site]), 1.0);
+							b(site - concentration.points_y) = -material.get_surface_recombination_velocity_hole(electrode_material_interface_number) / concentration.spacing_x * material.get_hole_trans_DOS(site) * std::min(exp(work_function - material.get_hole_trans_energy(site)), 1.0);
 
 						}
 					}
