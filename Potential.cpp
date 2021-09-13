@@ -13,6 +13,8 @@
 namespace pt = boost::property_tree;
 using namespace Eigen;
 
+typedef Triplet<double> Trip;
+
 void Potential::initialize(pt::ptree &settings){
 
 	double norm_potential = constant::boltzmann * constant::temperature / constant::elementary_charge;
@@ -48,10 +50,14 @@ void Potential::solve_inverse(Morphology &material, const PositionDependentParam
 	A.reserve(VectorXi::Constant(size, 6));
 	VectorXd b(size), x(size);
 
+	std::vector<Trip> tripletList;
+	tripletList.reserve(20 * size);
+
 	for (int i = 1; i < electrical.points_x-1; i++){
 		for (int j = 0; j < electrical.points_y; j++){
 
 			int site, site_x_minus, site_x_plus, site_y_minus, site_y_plus;
+			int point, point_y_minus, point_x_minus, point_x_plus, point_y_plus;
 
 			site = i * electrical.points_y + j; 
 
@@ -68,34 +74,42 @@ void Potential::solve_inverse(Morphology &material, const PositionDependentParam
 				else
 					site_y_plus = site + 1 - electrical.points_y;
 
-				A.insert(site - electrical.points_y, site - electrical.points_y) = -(material.get_relative_permittivity(site, site_x_minus) + material.get_relative_permittivity(site, site_x_plus)) / pow(electrical.spacing_x, 2.0)
-					- (material.get_relative_permittivity(site, site_y_minus) + material.get_relative_permittivity(site, site_y_plus)) / pow(electrical.spacing_y, 2.0);
+				point_x_minus = site_x_minus - electrical.points_y;
+				point_y_minus = site_y_minus - electrical.points_y;
+				point_x_plus = site_x_plus - electrical.points_y;
+				point_y_plus = site_y_plus - electrical.points_y;
+				point = site - electrical.points_y;
+
+				tripletList.push_back(Trip(point, point, -(material.get_relative_permittivity(site, site_x_minus) + material.get_relative_permittivity(site, site_x_plus)) / pow(electrical.spacing_x, 2.0)
+					- (material.get_relative_permittivity(site, site_y_minus) + material.get_relative_permittivity(site, site_y_plus)) / pow(electrical.spacing_y, 2.0) - (electron_concentration.data[site] + hole_concentration.data[site])));
 				if (i > 1)
-					A.insert(site - electrical.points_y, site_x_minus - electrical.points_y) = material.get_relative_permittivity(site, site_x_minus) / pow(electrical.spacing_x, 2.0);
+					tripletList.push_back(Trip(point, point_x_minus, material.get_relative_permittivity(site, site_x_minus) / pow(electrical.spacing_x, 2.0)));
 
 				if (i < electrical.points_x - 2)
-					A.insert(site - electrical.points_y, site_x_plus - electrical.points_y) = material.get_relative_permittivity(site, site_x_plus) / pow(electrical.spacing_x, 2.0);
+					tripletList.push_back(Trip(point, point_x_plus, material.get_relative_permittivity(site, site_x_plus) / pow(electrical.spacing_x, 2.0)));
 
-				A.insert(site - electrical.points_y, site_y_minus - electrical.points_y) = material.get_relative_permittivity(site, site_y_minus) / pow(electrical.spacing_y, 2.0);
-				A.insert(site - electrical.points_y, site_y_plus - electrical.points_y) = material.get_relative_permittivity(site, site_y_plus) / pow(electrical.spacing_y, 2.0);
+				tripletList.push_back(Trip(point, point_y_minus, material.get_relative_permittivity(site, site_y_minus) / pow(electrical.spacing_y, 2.0)));
+				tripletList.push_back(Trip(point, point_y_plus, material.get_relative_permittivity(site, site_y_plus) / pow(electrical.spacing_y, 2.0)));
 
-				b(site - electrical.points_y) = electron_concentration.data[site] - hole_concentration.data[site] - material.dopants.data[site] + material.MG_electron_concentration.data[site]
-					- material.MG_hole_concentration.data[site];
+				b(point) = electron_concentration.data[site] - hole_concentration.data[site] - material.dopants.data[site] + material.MG_electron_concentration.data[site]
+					- material.MG_hole_concentration.data[site] - (electron_concentration.data[site] + hole_concentration.data[site]) * previous.data[site];
 				if (i == 1)
-					b(site - electrical.points_y) += -material.get_relative_permittivity(site, site_x_minus) * material.get_electrode_potential(0) / pow(electrical.spacing_x, 2.0);
+					b(point) += -material.get_relative_permittivity(site, site_x_minus) * material.get_electrode_potential(0) / pow(electrical.spacing_x, 2.0);
 				if (i == electrical.points_x - 2)
-					b(site - electrical.points_y) += -material.get_relative_permittivity(site, site_x_plus) * material.get_electrode_potential(1) / pow(electrical.spacing_x, 2.0);
+					b(point) += -material.get_relative_permittivity(site, site_x_plus) * material.get_electrode_potential(1) / pow(electrical.spacing_x, 2.0);
 
 				if (material.negative_ion_transport(site)){
-					b(site - electrical.points_y) += negative_ion_concentration.data[site];
+					b(point) += negative_ion_concentration.data[site];
 				}
 				if (material.positive_ion_transport(site)){
-					b(site - electrical.points_y) -= positive_ion_concentration.data[site];
+					b(point) -= positive_ion_concentration.data[site];
 				}
 
 			}
 		}
 	}
+
+	A.setFromTriplets(tripletList.begin(), tripletList.end());
 
 	SparseLU<SparseMatrix<double>> solver;
 	A.makeCompressed();
