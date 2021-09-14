@@ -373,7 +373,7 @@ void Morphology::map_electrodes(){
 }
 
 void Morphology::calculate_recombination_rates(const PositionDependentParameter &electron_concentration, PositionDependentParameter &electron_rate, PositionDependentParameter &electron_rate_coef, 
-	const PositionDependentParameter &hole_concentration, PositionDependentParameter &hole_rate, PositionDependentParameter &hole_rate_coef, const PositionDependentParameter &electric_potential, PositionDependentParameter &net_rate){
+	const PositionDependentParameter &hole_concentration, PositionDependentParameter &hole_rate, PositionDependentParameter &hole_rate_coef, const PositionDependentParameter &electric_potential, PositionDependentParameter &net_rate, PositionDependentParameter &recombination_current_x, PositionDependentParameter &recombination_current_y){
 
 	if (recombination_mode[BULK_RECOMBINATION]){
 		for (int i = 0; i < points_x; i++){
@@ -398,6 +398,7 @@ void Morphology::calculate_recombination_rates(const PositionDependentParameter 
 				R = -get_interface_reduced_recombination_coef(pair_number) * get_interface_bimolecular_recombination_coef_1(pair_number);
 				hole_rate_coef.data[site[0]] += R * electron_concentration.data[site[1]];
 				electron_rate_coef.data[site[1]] += R * hole_concentration.data[site[0]];
+
 				R = -get_interface_reduced_recombination_coef(pair_number) * get_interface_bimolecular_recombination_coef_2(pair_number);
 				electron_rate_coef.data[site[0]] += R * hole_concentration.data[site[1]];
 				hole_rate_coef.data[site[1]] += R * electron_concentration.data[site[0]];
@@ -410,6 +411,21 @@ void Morphology::calculate_recombination_rates(const PositionDependentParameter 
 				electron_rate_coef.data[site[0]] += R * hole_concentration.data[site[1]];
 				hole_rate_coef.data[site[1]] += R * electron_concentration.data[site[0]];
 			}
+
+			if ((site[1] - site[0]) == points_y) // Check orientation of interface
+				recombination_current_x.data[site[0]] = - ((hole_rate_coef.data[site[0]] * hole_concentration.data[site[0]] - electron_rate_coef.data[site[0]] * electron_concentration.data[site[0]]) -
+					(hole_rate_coef.data[site[1]] * hole_concentration.data[site[1]] - electron_rate_coef.data[site[1]] * electron_concentration.data[site[1]])) * electron_concentration.spacing_x * 0.5;
+			else if ((site[1] - site[0]) == -points_y)
+				recombination_current_x.data[site[0]] = ((hole_rate_coef.data[site[0]] * hole_concentration.data[site[0]] - electron_rate_coef.data[site[0]] * electron_concentration.data[site[0]]) -
+					(hole_rate_coef.data[site[1]] * hole_concentration.data[site[1]] - electron_rate_coef.data[site[1]] * electron_concentration.data[site[1]])) * electron_concentration.spacing_x * 0.5;
+			else if ((site[1] - site[0]) == 1 || (site[1] - site[0]) == (points_y - 1))
+				recombination_current_y.data[site[0]] = - ((hole_rate_coef.data[site[0]] * hole_concentration.data[site[0]] - electron_rate_coef.data[site[0]] * electron_concentration.data[site[0]]) -
+					(hole_rate_coef.data[site[1]] * hole_concentration.data[site[1]] - electron_rate_coef.data[site[1]] * electron_concentration.data[site[1]])) * electron_concentration.spacing_x * 0.5;
+			else if ((site[1] - site[0]) == -1 || (site[1] - site[0]) == (1 - points_y))
+				recombination_current_y.data[site[0]] = ((hole_rate_coef.data[site[0]] * hole_concentration.data[site[0]] - electron_rate_coef.data[site[0]] * electron_concentration.data[site[0]]) -
+					(hole_rate_coef.data[site[1]] * hole_concentration.data[site[1]] - electron_rate_coef.data[site[1]] * electron_concentration.data[site[1]])) * electron_concentration.spacing_x * 0.5;
+			else
+				std::cout << "Unknown interface orientation encountered when determining interface recombination current." << std::endl;
 
 		}
 	}
@@ -612,6 +628,21 @@ void Morphology::calculate_recombination_rates(const PositionDependentParameter 
 			electron_rate_coef.data[trap_site] += (electron_concentration.data[trap_site] / n) * p * R;
 			electron_rate_coef.data[opposite_site] += (electron_concentration.data[opposite_site] / n) * p * R;
 			*/
+
+			if ((site[1] - site[0]) == points_y) // Check orientation of interface
+				recombination_current_x.data[site[0]] = - ((hole_rate_coef.data[site[0]] * hole_concentration.data[site[0]] - electron_rate_coef.data[site[0]] * electron_concentration.data[site[0]]) -
+					(hole_rate_coef.data[site[1]] * hole_concentration.data[site[1]] - electron_rate_coef.data[site[1]] * electron_concentration.data[site[1]])) * electron_concentration.spacing_x * 0.5;
+			else if ((site[1] - site[0]) == -points_y)
+				recombination_current_x.data[site[0]] = ((hole_rate_coef.data[site[0]] * hole_concentration.data[site[0]] - electron_rate_coef.data[site[0]] * electron_concentration.data[site[0]]) -
+					(hole_rate_coef.data[site[1]] * hole_concentration.data[site[1]] - electron_rate_coef.data[site[1]] * electron_concentration.data[site[1]])) * electron_concentration.spacing_x * 0.5;
+			else if ((site[1] - site[0]) == 1 || (site[1] - site[0]) == (points_y - 1))
+				recombination_current_y.data[site[0]] = - ((hole_rate_coef.data[site[0]] * hole_concentration.data[site[0]] - electron_rate_coef.data[site[0]] * electron_concentration.data[site[0]]) -
+					(hole_rate_coef.data[site[1]] * hole_concentration.data[site[1]] - electron_rate_coef.data[site[1]] * electron_concentration.data[site[1]])) * electron_concentration.spacing_x * 0.5;
+			else if ((site[1] - site[0]) == -1 || (site[1] - site[0]) == (1 - points_y))
+				recombination_current_y.data[site[0]] = ((hole_rate_coef.data[site[0]] * hole_concentration.data[site[0]] - electron_rate_coef.data[site[0]] * electron_concentration.data[site[0]]) -
+					(hole_rate_coef.data[site[1]] * hole_concentration.data[site[1]] - electron_rate_coef.data[site[1]] * electron_concentration.data[site[1]])) * electron_concentration.spacing_x * 0.5;
+			else
+				std::cout << "Unknown interface orientation encountered when determining interface recombination current." << std::endl;
 		}
 
 	}

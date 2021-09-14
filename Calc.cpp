@@ -18,7 +18,7 @@ namespace calc{
 	}
 	
 	MeasuredCurrent outer_circuit_current(Morphology &device_parameters, const PositionDependentParameter &electron_current, const PositionDependentParameter &hole_current, 
-		const PositionDependentParameter &displacement_current, const PositionDependentParameter &net_rate){
+		const PositionDependentParameter &displacement_current, const PositionDependentParameter &net_rate, const PositionDependentParameter& recombination_current_x, const PositionDependentParameter& recombination_current_y){
 
 		MeasuredCurrent current;
 		std::vector<double> row_current (net_rate.points_x, 0.0);
@@ -37,9 +37,9 @@ namespace calc{
 					break;
 				}
 				// DO SOMETHING ABOUT THIS!
-				row_current[i] += electron_current.data[site] + hole_current.data[site] + displacement_current.data[site];
-				if (abs(net_rate.data[site_x_plus] * net_rate.spacing_x) >= abs(1E-7*(electron_current.data[site] + hole_current.data[site])) && abs(net_rate.data[site] * net_rate.spacing_x) >= abs(1E-7*(electron_current.data[site] + hole_current.data[site])))
-				row_current[i] += abs(net_rate.data[site_x_plus] - net_rate.data[site]) * net_rate.spacing_x * 0.5;
+				row_current[i] += electron_current.data[site] + hole_current.data[site] + displacement_current.data[site] + recombination_current_x.data[site];
+			//	if (abs(net_rate.data[site_x_plus] * net_rate.spacing_x) >= abs(1E-7*(electron_current.data[site] + hole_current.data[site])) && abs(net_rate.data[site] * net_rate.spacing_x) >= abs(1E-7*(electron_current.data[site] + hole_current.data[site])))
+			//	row_current[i] += abs(net_rate.data[site_x_plus] - net_rate.data[site]) * net_rate.spacing_x * 0.5;
 				
 
 

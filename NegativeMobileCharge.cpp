@@ -190,7 +190,7 @@ void NegativeMobileCharge::solve_inverse(Morphology &material, const Potential &
 						if ((material.is_interface(site) && material.is_interface(site_y_minus) && (material.get_lattice_number(site) != material.get_lattice_number(site_y_minus)))){
 							int pair_number = material.get_interface_pair(site, site_y_minus);
 							tripletList.push_back(Trip(point, point, -material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_y * std::min(exp(material.get_electron_trans_energy(site_y_minus) + potential.electrical.data[site_y_minus] - material.get_electron_trans_energy(site) - potential.electrical.data[site]), 1.0)));
-							tripletList.push_back(Trip(point, point_y_minus - concentration.points_y, material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_y *std::min(exp(material.get_electron_trans_energy(site) + potential.electrical.data[site] - material.get_electron_trans_energy(site_y_minus) - potential.electrical.data[site_y_minus]), 1.0)));
+							tripletList.push_back(Trip(point, point_y_minus, material.get_interface_electron_transfer_velocity(pair_number) / concentration.spacing_y *std::min(exp(material.get_electron_trans_energy(site) + potential.electrical.data[site] - material.get_electron_trans_energy(site_y_minus) - potential.electrical.data[site_y_minus]), 1.0)));
 						}
 						else{
 							tripletList.push_back(Trip(point, point, -material.get_electron_mobility(site, site_y_minus) / pow(concentration.spacing_y, 2.0) * calc::bernou(potential.electrical.data[site] + material.get_electron_trans_energy(site) - potential.electrical.data[site_y_minus] - material.get_electron_trans_energy(site_y_minus))));

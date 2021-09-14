@@ -87,7 +87,7 @@ public:
 	// No field-dependence is included so far, the potential is only needed for calculating SRH recombination via CT states.
 	void calculate_generation_rate(const PositionDependentParameter &electron_concentration, PositionDependentParameter &electron_rate, const PositionDependentParameter &hole_concentration, PositionDependentParameter &hole_rate, const PositionDependentParameter &potential, PositionDependentParameter &net_rate);
 	void calculate_recombination_rates(const PositionDependentParameter &electron_concentration, PositionDependentParameter &electron_rate, PositionDependentParameter &electron_rate_coef, 
-		const PositionDependentParameter &hole_concentration, PositionDependentParameter &hole_rate, PositionDependentParameter &hole_rate_coef, const PositionDependentParameter &potential, PositionDependentParameter &net_rate);
+		const PositionDependentParameter &hole_concentration, PositionDependentParameter &hole_rate, PositionDependentParameter &hole_rate_coef, const PositionDependentParameter &potential, PositionDependentParameter &net_rate, PositionDependentParameter &recombination_current_x, PositionDependentParameter& recombination_current_y);
 
 	// Calculates the mid-gap state populations for the given values of potential and carrier concentrations.
 	void calculate_MG_state_population(const PositionDependentParameter &electric_potential, const PositionDependentParameter &electron_concentration, const PositionDependentParameter &hole_concentration);

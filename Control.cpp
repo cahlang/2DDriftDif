@@ -67,7 +67,7 @@ namespace control{
 	}
 
 	bool solver(Morphology &material, Potential &potential, NegativeMobileCharge &electron, PositiveMobileCharge &hole, 
-		NegativeMobileCharge &negative_ion, PositiveMobileCharge &positive_ion, MeasuredCurrent &outer_circuit_current, PositionDependentParameter &net_rate){
+		NegativeMobileCharge &negative_ion, PositiveMobileCharge &positive_ion, MeasuredCurrent &outer_circuit_current, PositionDependentParameter &net_rate, PositionDependentParameter &recombination_current_x, PositionDependentParameter &recombination_current_y){
 
 		bool has_converged = false;
 		bool has_converged_inner = false;
@@ -76,7 +76,7 @@ namespace control{
 		while (!has_converged && counter <= constant::max_iteration_step){
 
 
-			determine_rates(material, net_rate, electron, hole, potential.electrical);
+			determine_rates(material, net_rate, electron, hole, potential.electrical, recombination_current_x, recombination_current_y);
 
 			if (electron.concentration.points_y == 1)
 				potential.solve_one_d(material, electron.concentration, hole.concentration, negative_ion.concentration, positive_ion.concentration);
@@ -135,7 +135,7 @@ namespace control{
 			
 		}
 
-		determine_rates(material, net_rate, electron, hole, potential.electrical);
+		determine_rates(material, net_rate, electron, hole, potential.electrical, recombination_current_x, recombination_current_y);
 
 		electron.calculate_current(material, potential);
 		hole.calculate_current(material, potential);
@@ -163,7 +163,7 @@ namespace control{
 			}
 		}
 
-		outer_circuit_current = calc::outer_circuit_current(material, negative_charge_carrier_current, positive_charge_carrier_current, potential.displacement_current, net_rate);
+		outer_circuit_current = calc::outer_circuit_current(material, negative_charge_carrier_current, positive_charge_carrier_current, potential.displacement_current, net_rate, recombination_current_x, recombination_current_y);
 
 		printf("Number of iterations required: %d\n", counter);
 
@@ -175,7 +175,7 @@ namespace control{
 
 	}
 
-	bool solver(Morphology &material, Potential &potential, NegativeMobileCharge &electron, PositiveMobileCharge &hole, NegativeMobileCharge &negative_ion, PositiveMobileCharge &positive_ion, MeasuredCurrent &outer_circuit_current, PositionDependentParameter &net_rate,
+	bool solver(Morphology &material, Potential &potential, NegativeMobileCharge &electron, PositiveMobileCharge &hole, NegativeMobileCharge &negative_ion, PositiveMobileCharge &positive_ion, MeasuredCurrent &outer_circuit_current, PositionDependentParameter &net_rate, PositionDependentParameter &recombination_current_x, PositionDependentParameter &recombination_current_y,
 		PositionDependentParameter &previous_holecon_concentration, PositionDependentParameter &previous_electroncon_concentration, PositionDependentParameter &previous_neg_ion_con, PositionDependentParameter &previous_pos_ion_con, PositionDependentParameter &previous_potential, double time_step){
 
 		bool has_converged = false;
@@ -183,7 +183,7 @@ namespace control{
 
 		while (!has_converged && counter <= constant::max_iteration_step){
 
-			determine_rates(material, net_rate, electron, hole, potential.electrical);
+			determine_rates(material, net_rate, electron, hole, potential.electrical, recombination_current_x, recombination_current_y);
 			if (electron.concentration.points_y == 1){
 				potential.solve_one_d(material, electron.concentration, hole.concentration, negative_ion.concentration, positive_ion.concentration);
 			}
@@ -241,7 +241,7 @@ namespace control{
 
 		}
 
-		determine_rates(material, net_rate, electron, hole, potential.electrical);
+		determine_rates(material, net_rate, electron, hole, potential.electrical, recombination_current_x, recombination_current_y);
 
 		electron.calculate_current(material, potential);
 		hole.calculate_current(material, potential);
@@ -270,7 +270,7 @@ namespace control{
 			}
 		}
 
-		outer_circuit_current = calc::outer_circuit_current(material, negative_charge_carrier_current, positive_charge_carrier_current, potential.displacement_current, net_rate);
+		outer_circuit_current = calc::outer_circuit_current(material, negative_charge_carrier_current, positive_charge_carrier_current, potential.displacement_current, net_rate, recombination_current_x, recombination_current_y);
 
 		printf("Number of iterations required: %d\n", counter);
 
@@ -281,7 +281,7 @@ namespace control{
 		return true;
 	}
 
-	void determine_rates(Morphology &material, PositionDependentParameter &net_rate, NegativeMobileCharge &electron, PositiveMobileCharge &hole, PositionDependentParameter &potential){
+	void determine_rates(Morphology &material, PositionDependentParameter &net_rate, NegativeMobileCharge &electron, PositiveMobileCharge &hole, PositionDependentParameter &potential, PositionDependentParameter& recombination_current_x, PositionDependentParameter& recombination_current_y){
 
 		std::fill(electron.rate.data.begin(), electron.rate.data.end(), 0.0);
 		std::fill(hole.rate.data.begin(), hole.rate.data.end(), 0.0);
@@ -290,7 +290,7 @@ namespace control{
 		std::fill(net_rate.data.begin(), net_rate.data.end(), 0.0);
 
 		material.calculate_generation_rate(electron.concentration, electron.rate, hole.concentration, hole.rate, potential, net_rate);
-		material.calculate_recombination_rates(electron.concentration, electron.rate, electron.rate_coef, hole.concentration, hole.rate, hole.rate_coef, potential, net_rate);
+		material.calculate_recombination_rates(electron.concentration, electron.rate, electron.rate_coef, hole.concentration, hole.rate, hole.rate_coef, potential, net_rate, recombination_current_x, recombination_current_y);
 
 		return;
 
@@ -299,11 +299,17 @@ namespace control{
 	void run_measurement(Morphology &morphology, Potential &potential, NegativeMobileCharge &electron, PositiveMobileCharge &hole,
 		NegativeMobileCharge &negative_ion, PositiveMobileCharge &positive_ion, Experiment &measurement){
 
+		PositionDependentParameter recombination_current_x, recombination_current_y;
+		recombination_current_x.initialize(electron.current_x.normalization_coef);
+		recombination_current_y.initialize(electron.current_y.normalization_coef);
+
 		if (measurement.experiment_iv){
 
 			measurement.set_current_data_point(0);
 
 			std::cout << "Initiating calculations" << std::endl;
+
+
 
 			while (measurement.current_data_point < measurement.data_points){
 
@@ -313,6 +319,8 @@ namespace control{
 
 				PositionDependentParameter net_rate;
 				net_rate.initialize(electron.rate.normalization_coef);
+
+
 
 				morphology.set_electrode_potential(0, measurement.anode_potential[i] - (morphology.get_work_function(0)-morphology.get_work_function(1)));
 				morphology.set_electrode_potential(1, measurement.cathode_potential[i]);
@@ -340,16 +348,18 @@ namespace control{
 				std::cout << "Boundary conditions and initial guess set." << std::endl;
 				std::cout << "Solving for data point " << i << "..." << std::endl;
 
-				solver(morphology, potential, electron, hole, negative_ion, positive_ion, current, net_rate);
+				solver(morphology, potential, electron, hole, negative_ion, positive_ion, current, net_rate, recombination_current_x, recombination_current_y);
 				if (measurement.output_full_data){
 					potential.electrical.output_data("potential", i);
 					electron.concentration.output_data("electroncon", i);
 					hole.concentration.output_data("holecon", i);
 					electron.current_x.output_data("ecurrentx", i);
 					hole.current_x.output_data("hcurrentx", i);
+					recombination_current_x.output_data("reccurrentx", i);
 					if (potential.electrical.points_y > 1){
 						hole.current_y.output_data("hcurrenty", i);
 						electron.current_y.output_data("ecurrenty", i);
+						recombination_current_x.output_data("reccurrenty", i);
 					}
 					potential.electrochemical_electron.output_data("electron_fermi_level", i);
 					potential.electrochemical_hole.output_data("hole_fermi_level", i);
@@ -405,7 +415,7 @@ namespace control{
 			std::cout << "Boundary conditions and initial guess set." << std::endl;
 			std::cout << "Solving..." << std::endl;
 
-			solver(morphology, potential, electron, hole, negative_ion, positive_ion, discard, net_rate);
+			solver(morphology, potential, electron, hole, negative_ion, positive_ion, discard, net_rate, recombination_current_x, recombination_current_y);
 
 				potential.electrical.output_data("potential.dat");
 				electron.concentration.output_data("electroncon.dat");
@@ -488,10 +498,10 @@ namespace control{
 				std::cout << "Solving for data point " << i << "..." << std::endl;
 				
 				if (i == 0){
-					solver(morphology, potential, electron, hole, negative_ion, positive_ion, current, net_rate);
+					solver(morphology, potential, electron, hole, negative_ion, positive_ion, current, net_rate, recombination_current_x, recombination_current_y);
 				}
 				else{
-					solver(morphology, potential, electron, hole, negative_ion, positive_ion, current, net_rate, 
+					solver(morphology, potential, electron, hole, negative_ion, positive_ion, current, net_rate, recombination_current_x, recombination_current_y, 
 						previous_hole_concentration, previous_electron_concentration, previous_neg_ion_concentration, previous_pos_ion_concentration, previous_potential, measurement.time_step);
 				}
 				if (measurement.output_full_data){
@@ -583,11 +593,11 @@ namespace control{
 				std::cout << "Solving for data point " << i << "..." << std::endl;
 
 				if (i == 0){
-					solver(morphology, potential, electron, hole, negative_ion, positive_ion, current, net_rate);
+					solver(morphology, potential, electron, hole, negative_ion, positive_ion, current, net_rate, recombination_current_x, recombination_current_y);
 					morphology.light_on();
 				}
 				else{
-					solver(morphology, potential, electron, hole, negative_ion, positive_ion, current, net_rate,
+					solver(morphology, potential, electron, hole, negative_ion, positive_ion, current, net_rate, recombination_current_x, recombination_current_y,
 						previous_hole_concentration, previous_electron_concentration, previous_neg_ion_concentration, previous_pos_ion_concentration, previous_potential, measurement.time_step);
 				}
 				if (measurement.current_data_point == (int)(measurement.pulse_length / measurement.time_step))
